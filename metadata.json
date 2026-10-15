@@ -1,0 +1,10 @@
+{
+  "name": "Nasubi Clock",
+  "description": "茄子の針が時を刻むモダンな多機能卓上置時計アプリ。タイマー、Googleカレンダー予定、背景カスタマイズ機能付き。",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
