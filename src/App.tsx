@@ -3,11 +3,11 @@ import { Settings } from 'lucide-react';
 import { NasubiClock } from './components/NasubiClock';
 import { WidgetsPanel, type AppNotification } from './components/WidgetsPanel';
 import { BackgroundCropperModal, type BackgroundConfig } from './components/BackgroundCropperModal';
-import { SettingsModal, type AppSettings, type OrientationMode } from './components/SettingsModal';
+import { SettingsModal, type AppSettings } from './components/SettingsModal';
 import { auth } from './services/firebase';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  orientation: 'landscape-top-right', // Horizontal fixed: screen top to the right
+  orientation: 'auto',
   autoDimEnabled: true,
   minBrightness: 0.2, // 20% minimum brightness
   autoDimDelaySec: 5,
@@ -29,6 +29,26 @@ const DEFAULT_BG_CONFIG: BackgroundConfig = {
 };
 
 export default function App() {
+  // Orientation detection (Portrait vs Landscape)
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerHeight > window.innerWidth;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleOrientationCheck = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    window.addEventListener('resize', handleOrientationCheck);
+    window.addEventListener('orientationchange', handleOrientationCheck);
+    return () => {
+      window.removeEventListener('resize', handleOrientationCheck);
+      window.removeEventListener('orientationchange', handleOrientationCheck);
+    };
+  }, []);
+
   // App Settings with localStorage persistence
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
@@ -50,13 +70,12 @@ export default function App() {
   });
 
   // Layout Swap state (3-minute interval)
-  // isLeftClock === true: Clock is on Left, Widgets on Right.
-  // isLeftClock === false: Widgets on Left, Clock on Right.
+  // In Landscape: isLeftClock === true: Clock on Left, Widgets on Right; switches every 3 min.
+  // In Portrait: No automatic switching; Clock at top, Widgets below with scrolling.
   const [isLeftClock, setIsLeftClock] = useState<boolean>(true);
-  const [swapCountdown, setSwapCountdown] = useState<number>(180); // 3 minutes = 180s
+  const [swapCountdown, setSwapCountdown] = useState<number>(180);
 
   // Screen Brightness Dimming state
-  // "起動中は輝度を最低まで落とす" -> Default dimmed while running
   const [isDimmed, setIsDimmed] = useState<boolean>(true);
   const dimTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -73,7 +92,7 @@ export default function App() {
     return {
       id: 'init-1',
       title: '茄子置時計が起動しました',
-      message: '日本標準時 (JST) で時を刻んでいます。左右の配置は3分ごとに切り替わります。',
+      message: '日本標準時 (JST) で時を刻んでいます。',
       time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
       type: 'system',
     };
@@ -132,8 +151,6 @@ export default function App() {
 
   // ==========================================================
   // 2. BRIGHTNESS / DIMMING & VISIBILITY CHANGE
-  // "起動中は輝度を最低まで落とす"
-  // "バックに行ったら輝度をもとに戻す"
   // ==========================================================
   const wakeUpBrightness = useCallback(() => {
     setIsDimmed(false);
@@ -150,13 +167,12 @@ export default function App() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        // App went to background -> Restore brightness to full / normal!
+        // App went to background -> Restore brightness to full / normal
         setIsDimmed(false);
         if (dimTimerRef.current) clearTimeout(dimTimerRef.current);
       } else {
         // App returned to foreground
         requestWakeLock();
-        // Give user a brief 3s bright glance before dimming to minimum
         setIsDimmed(false);
         if (dimTimerRef.current) clearTimeout(dimTimerRef.current);
         if (settings.autoDimEnabled) {
@@ -168,7 +184,6 @@ export default function App() {
     };
 
     const handleWindowBlur = () => {
-      // Window blurred (user clicked outside or switched window)
       setIsDimmed(false);
     };
 
@@ -190,11 +205,13 @@ export default function App() {
   }, []);
 
   // ==========================================================
-  // 3. 3-MINUTE LAYOUT SWITCH
-  // "左右の表示は３分に１回切り替える"
+  // 3. LAYOUT SWITCH
+  // ・横向きなら現状の仕様通りとする（3分に1回自動切り替え）
+  // ・縦向きの場合は画面の自動切り替わりなし
   // ==========================================================
   useEffect(() => {
-    if (!settings.autoSwapEnabled) return;
+    // 縦向きの場合は自動切り替えを行わない
+    if (isPortrait || !settings.autoSwapEnabled) return;
 
     const interval = setInterval(() => {
       setSwapCountdown((prev) => {
@@ -207,75 +224,18 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [settings.autoSwapEnabled, settings.swapIntervalMin]);
+  }, [isPortrait, settings.autoSwapEnabled, settings.swapIntervalMin]);
 
   const handleManualSwap = () => {
     setIsLeftClock((prev) => !prev);
     setSwapCountdown(settings.swapIntervalMin * 60);
   };
 
-  // ==========================================================
-  // 4. ORIENTATION STYLING
-  // "画面は縦固定でも、横固定でも、自動でも
-  //  横固定（画面上部が右）で表示するようにする"
-  // ==========================================================
-  // Attempt Screen Orientation lock if browser supports it
-  useEffect(() => {
-    try {
-      const screenOri = window.screen.orientation;
-      if (screenOri && 'lock' in screenOri) {
-        if (settings.orientation === 'landscape-top-right') {
-          (screenOri as unknown as { lock: (mode: string) => Promise<void> }).lock('landscape-secondary').catch(() => {});
-        } else if (settings.orientation === 'landscape-normal') {
-          (screenOri as unknown as { lock: (mode: string) => Promise<void> }).lock('landscape-primary').catch(() => {});
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, [settings.orientation]);
-
-  // Calculate CSS rotation & dimension styles based on orientation selection
-  const orientationContainerStyle: React.CSSProperties = React.useMemo(() => {
-    switch (settings.orientation) {
-      case 'landscape-top-right': // Screen top is to the right (90deg)
-        return {
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          width: '100vh',
-          height: '100vw',
-          transform: 'translate(-50%, -50%) rotate(90deg)',
-          transformOrigin: 'center center',
-          overflow: 'hidden',
-        };
-      case 'landscape-top-left': // Screen top is to the left (270deg)
-        return {
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          width: '100vh',
-          height: '100vw',
-          transform: 'translate(-50%, -50%) rotate(-90deg)',
-          transformOrigin: 'center center',
-          overflow: 'hidden',
-        };
-      case 'portrait':
-        return {
-          position: 'fixed',
-          inset: 0,
-          overflow: 'hidden',
-        };
-      case 'landscape-normal':
-      case 'auto':
-      default:
-        return {
-          position: 'fixed',
-          inset: 0,
-          overflow: 'hidden',
-        };
-    }
-  }, [settings.orientation]);
+  // Stable notification handler to prevent re-render thrashing
+  const handleNewNotification = useCallback((notif: AppNotification) => {
+    setLatestNotification(notif);
+    wakeUpBrightness();
+  }, [wakeUpBrightness]);
 
   // Render Background
   const backgroundStyle: React.CSSProperties = React.useMemo(() => {
@@ -293,44 +253,47 @@ export default function App() {
   }, [bgConfig]);
 
   // Brightness overlay opacity
-  // When isDimmed is true, dim down to minimum brightness (e.g. 20% brightness = 80% darkness overlay)
   const overlayDarkness = isDimmed && settings.autoDimEnabled ? (1 - settings.minBrightness) : 0;
 
   return (
     <div
-      className="relative w-screen h-screen bg-black overflow-hidden select-none font-sans text-white touch-manipulation"
+      className={`relative w-full ${isPortrait ? 'min-h-screen overflow-y-auto' : 'h-screen overflow-hidden'} bg-black select-none font-sans text-white touch-manipulation`}
       onClick={wakeUpBrightness}
       onMouseMove={wakeUpBrightness}
     >
-      {/* Rotated Orientation Wrapper */}
-      <div style={orientationContainerStyle} className="flex flex-col justify-between">
-        {/* Background Layer */}
-        <div
-          className="absolute inset-0 -z-10 transition-all duration-700"
-          style={backgroundStyle}
-        />
+      {/* Background Layer (Fixed behind everything) */}
+      <div
+        className="fixed inset-0 -z-10 transition-all duration-700 pointer-events-none"
+        style={backgroundStyle}
+      />
 
-        {/* Ambient Dark/Contrast Tint */}
-        <div className="absolute inset-0 -z-10 bg-black/35 backdrop-blur-[1px]" />
+      {/* Ambient Dark/Contrast Tint */}
+      <div className="fixed inset-0 -z-10 bg-black/35 backdrop-blur-[1px] pointer-events-none" />
 
-        {/* Dimming Darkness Overlay (Controls active brightness reduction) */}
-        <div
-          className="absolute inset-0 z-30 bg-black pointer-events-none transition-opacity duration-1000 ease-in-out"
-          style={{ opacity: overlayDarkness }}
-        />
+      {/* Dimming Darkness Overlay */}
+      <div
+        className="fixed inset-0 z-30 bg-black pointer-events-none transition-opacity duration-1000 ease-in-out"
+        style={{ opacity: overlayDarkness }}
+      />
 
+      {/* Main Container */}
+      <div className="relative flex flex-col justify-between w-full h-[100dvh] h-screen overflow-hidden">
         {/* ========================================================== */}
-        {/* TOP BAR: Controls & Status (Subtle & Non-distracting) */}
+        {/* TOP BAR: Title & Settings Icon */}
         {/* ========================================================== */}
-        <header className="relative z-40 flex items-center justify-between px-4 py-2 w-full text-xs text-purple-200/80">
-          {/* Left: App Title */}
+        <header className="relative z-40 flex items-center justify-between px-3 py-1.5 w-full text-xs text-purple-200/80 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5 font-semibold text-white/90 drop-shadow">
-              🍆 <span className="font-medium tracking-wide">茄子置時計</span>
+            <span className="flex items-center gap-2 font-semibold text-white/90 drop-shadow">
+              <img
+                src="/icon.png"
+                alt="茄子マスコット"
+                className="w-6 h-6 rounded-full object-cover border border-purple-400/50 shadow-sm"
+                referrerPolicy="no-referrer"
+              />
+              <span className="font-medium tracking-wide">茄子置時計</span>
             </span>
           </div>
 
-          {/* Right: Settings Icon (右上) */}
           <div className="flex items-center">
             <button
               onClick={(e) => {
@@ -339,7 +302,7 @@ export default function App() {
                 setIsSettingsOpen(true);
               }}
               className="p-1.5 rounded-full bg-purple-950/70 hover:bg-purple-800 text-purple-200 hover:text-white border border-purple-400/30 transition shadow-lg cursor-pointer"
-              title="置時計の設定"
+              title="茄子置時計の設定"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -347,41 +310,63 @@ export default function App() {
         </header>
 
         {/* ========================================================== */}
-        {/* MAIN BODY: 50% / 50% SPLIT (Swapped every 3 minutes!) */}
+        {/* MAIN BODY: １画面にすべて入るレイアウト */}
+        {/* ・横向き: 50% / 50% 分割 & 3分に1回自動切り替え */}
+        {/* ・縦向き: 上部に時計、下部にタイマー・予定・通知（1画面に収容） */}
         {/* ========================================================== */}
-        <main className="relative z-20 flex-1 w-full grid grid-cols-1 md:grid-cols-2 p-2 md:p-4 gap-2 md:gap-4 overflow-hidden items-center justify-center transition-all duration-700">
-          {/* Panel A (Left when isLeftClock, Right when !isLeftClock) */}
-          <div
-            className={`w-full h-full flex items-center justify-center transition-all duration-700 ${
-              isLeftClock ? 'md:order-1' : 'md:order-2'
-            }`}
-          >
-            <NasubiClock
-              numeralStyle={settings.numeralStyle}
-              showDigital={settings.showDigital}
-            />
-          </div>
+        {isPortrait ? (
+          /* PORTRAIT MODE: 1-screen fit without scrolling */
+          <main className="relative z-20 flex-1 min-h-0 w-full flex flex-col items-center justify-between px-2 py-1 gap-1.5 overflow-hidden">
+            {/* Clock at Top (auto-fits available height) */}
+            <div className="flex-1 min-h-0 w-full max-w-[min(90vw,36vh)] flex items-center justify-center shrink">
+              <NasubiClock
+                numeralStyle={settings.numeralStyle}
+                showDigital={settings.showDigital}
+              />
+            </div>
 
-          {/* Panel B: Widgets (Right when isLeftClock, Left when !isLeftClock) */}
-          <div
-            className={`w-full h-full flex items-center justify-center transition-all duration-700 ${
-              isLeftClock ? 'md:order-2' : 'md:order-1'
-            }`}
-          >
-            <WidgetsPanel
-              latestNotification={latestNotification}
-              onNewNotification={(notif) => {
-                setLatestNotification(notif);
-                wakeUpBrightness();
-              }}
-              onClearNotification={() => setLatestNotification(null)}
-            />
-          </div>
-        </main>
+            {/* Widgets underneath */}
+            <div className="w-full max-w-md shrink-0">
+              <WidgetsPanel
+                latestNotification={latestNotification}
+                onNewNotification={handleNewNotification}
+                onClearNotification={() => setLatestNotification(null)}
+              />
+            </div>
+          </main>
+        ) : (
+          /* LANDSCAPE MODE: 50% / 50% split with 3-minute automatic swap */
+          <main className="relative z-20 flex-1 min-h-0 w-full grid grid-cols-2 p-1.5 md:p-3 gap-2 md:gap-4 overflow-hidden items-center justify-center transition-all duration-700">
+            {/* Panel A: Clock */}
+            <div
+              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
+                isLeftClock ? 'order-1' : 'order-2'
+              }`}
+            >
+              <NasubiClock
+                numeralStyle={settings.numeralStyle}
+                showDigital={settings.showDigital}
+              />
+            </div>
+
+            {/* Panel B: Widgets */}
+            <div
+              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
+                isLeftClock ? 'order-2' : 'order-1'
+              }`}
+            >
+              <WidgetsPanel
+                latestNotification={latestNotification}
+                onNewNotification={handleNewNotification}
+                onClearNotification={() => setLatestNotification(null)}
+              />
+            </div>
+          </main>
+        )}
 
         {/* Dim Tap Notification hint on screen bottom if dimmed */}
         {isDimmed && settings.autoDimEnabled && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-[10px] text-purple-300/40 tracking-wider">
+          <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-[10px] text-purple-300/40 tracking-wider">
             タップで画面を明るく表示
           </div>
         )}

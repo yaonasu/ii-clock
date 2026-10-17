@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Moon, Sun, Shuffle, ShieldCheck, Image as ImageIcon, LogOut, Check, Download } from 'lucide-react';
+import { X, Moon, Sun, Shuffle, ShieldCheck, Image as ImageIcon, LogOut, Check } from 'lucide-react';
 import { logout } from '../services/firebase';
 
 export type OrientationMode =
@@ -61,9 +61,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="flex flex-col w-full max-w-lg max-h-[90vh] bg-slate-900 border border-purple-500/30 rounded-3xl overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-purple-500/20 bg-purple-950/40">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">⚙️</span>
-            <h2 className="text-base md:text-lg font-bold text-white">置時計の設定</h2>
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/icon.png"
+              alt="茄子マスコット"
+              className="w-7 h-7 rounded-full object-cover border border-purple-400/50 shadow"
+              referrerPolicy="no-referrer"
+            />
+            <h2 className="text-base md:text-lg font-bold text-white">茄子置時計の設定</h2>
           </div>
           <button
             onClick={onClose}
@@ -179,20 +184,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* 5. SCREEN WAKE LOCK STATUS */}
           <section className="space-y-2 pt-3 border-t border-purple-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-semibold text-purple-200">
-                <ShieldCheck className="w-4 h-4 text-amber-400" />
-                <span>画面スリープ防止 (Wake Lock)</span>
-              </div>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  wakeLockActive
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}
-              >
-                {wakeLockActive ? '常時点灯中' : '未対応/待機中'}
-              </span>
+            <div className="flex items-center gap-2 font-semibold text-purple-200">
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span>画面スリープ防止 (Wake Lock)</span>
             </div>
             <p className="text-xs text-purple-300/70">
               置時計の稼働中、端末の画面が自動ロック（スリープ）されないように制御しています。
@@ -223,31 +217,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </section>
 
-          {/* 7. GITHUB PROJECT ZIP DOWNLOAD */}
-          <section className="space-y-2 pt-3 border-t border-purple-500/20">
-            <div className="flex items-center justify-between">
-              <div className="font-semibold text-purple-200 flex items-center gap-1.5">
-                <span>📦</span>
-                <span>GitHub用ファイル一式 (ZIP)</span>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                GitHub Actions対応
-              </span>
-            </div>
-            <p className="text-xs text-purple-300/70">
-              GitHubにpushすると自動でAPKがビルドされるワークフロー（.github/workflows）およびAndroidネイティブ構成が含まれています。
-            </p>
-            <a
-              href="/nasubi-clock.zip"
-              download="nasubi-clock.zip"
-              className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-lg shadow-purple-900/40 transition cursor-pointer active:scale-98"
-            >
-              <Download className="w-4 h-4" />
-              <span>nasubi-clock.zip をダウンロード</span>
-            </a>
-          </section>
-
-          {/* 8. GOOGLE ACCOUNT STATUS */}
+          {/* 7. GOOGLE ACCOUNT STATUS */}
           {userEmail && (
             <section className="flex items-center justify-between pt-3 border-t border-purple-500/20 text-xs">
               <span className="text-purple-300/80 truncate max-w-[200px]">
