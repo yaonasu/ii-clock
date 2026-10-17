@@ -4,7 +4,7 @@ import { logout } from '../services/firebase';
 
 export interface AppSettings {
   numeralStyle: 'arabic' | 'roman';
-  showDigital: boolean;
+  showDigital?: boolean;
 }
 
 interface SettingsModalProps {
@@ -103,21 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </section>
 
-          {/* 3. DIGITAL TIME DISPLAY TOGGLE */}
-          <section className="flex items-center justify-between pt-4 border-t border-purple-500/20">
-            <span className="font-semibold text-purple-200">デジタル時計の表示</span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.showDigital}
-                onChange={(e) => onUpdateSettings({ showDigital: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-            </label>
-          </section>
-
-          {/* 4. GOOGLE ACCOUNT STATUS */}
+          {/* 3. GOOGLE ACCOUNT STATUS */}
           {userEmail && (
             <section className="flex items-center justify-between pt-4 border-t border-purple-500/20 text-xs">
               <span className="text-purple-300/80 truncate max-w-[200px]">

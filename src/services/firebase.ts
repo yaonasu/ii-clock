@@ -12,7 +12,6 @@ const provider = new GoogleAuthProvider();
 provider.addScope(CALENDAR_SCOPE);
 provider.setCustomParameters({
   prompt: 'select_account',
-  access_type: 'offline',
 });
 
 let isSigningIn = false;

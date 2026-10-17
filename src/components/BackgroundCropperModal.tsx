@@ -87,15 +87,35 @@ export const BackgroundCropperModal: React.FC<BackgroundCropperModalProps> = ({
 
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result as string;
-      setSourceImg(result);
-      setScale(1);
-      setOffsetX(0);
-      setOffsetY(0);
-      setMode('positioning');
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1280;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.85);
+        setSourceImg(compressed);
+        setScale(1);
+        setOffsetX(0);
+        setOffsetY(0);
+        setMode('positioning');
+      };
+      img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
-    // Reset file input value
     e.target.value = '';
   };
 

@@ -97,7 +97,11 @@ export default function App() {
   // Save background helper
   const handleSaveBackground = (newBg: BackgroundConfig) => {
     setBgConfig(newBg);
-    localStorage.setItem('ii_clock_bg', JSON.stringify(newBg));
+    try {
+      localStorage.setItem('ii_clock_bg', JSON.stringify(newBg));
+    } catch (e) {
+      console.warn('Failed to save background to localStorage:', e);
+    }
   };
 
   // ==========================================================
@@ -210,11 +214,25 @@ export default function App() {
       className="relative w-full h-[100dvh] h-screen overflow-hidden bg-black select-none font-sans text-white touch-manipulation"
       onClick={handleScreenTap}
     >
-      {/* Background Layer */}
-      <div
-        className="fixed inset-0 -z-10 transition-all duration-700 pointer-events-none"
-        style={backgroundStyle}
-      />
+      {/* Background Layer: supports custom image with transform scale/pan, or preset gradient */}
+      {bgConfig.type === 'custom' && bgConfig.dataUrl ? (
+        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none flex items-center justify-center">
+          <img
+            src={bgConfig.dataUrl}
+            alt="カスタム背景"
+            className="w-full h-full object-cover pointer-events-none transition-transform duration-200"
+            style={{
+              transform: `translate(${bgConfig.offsetX || 0}px, ${bgConfig.offsetY || 0}px) scale(${bgConfig.scale || 1})`,
+              transformOrigin: 'center center',
+            }}
+          />
+        </div>
+      ) : (
+        <div
+          className="fixed inset-0 -z-10 transition-all duration-700 pointer-events-none"
+          style={{ background: bgConfig.dataUrl || DEFAULT_BG_CONFIG.dataUrl }}
+        />
+      )}
 
       {/* Ambient Dark/Contrast Tint */}
       <div className="fixed inset-0 -z-10 bg-black/35 backdrop-blur-[1px] pointer-events-none" />

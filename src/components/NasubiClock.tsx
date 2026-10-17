@@ -79,9 +79,9 @@ export const NasubiClock: React.FC<NasubiClockProps> = ({
   }, [numeralStyle]);
 
   return (
-    <div className="relative flex flex-col items-center justify-center w-full h-full p-2 select-none">
-      {/* Clock container */}
-      <div className="relative w-auto h-full max-w-full max-h-[min(42vh,360px)] md:max-h-[min(85vh,480px)] aspect-square flex items-center justify-center">
+    <div className="relative flex flex-col items-center justify-center w-full h-full p-1 select-none">
+      {/* Clock container: scaled so date and digital display never clip */}
+      <div className="relative w-auto h-full max-w-full max-h-[min(34vh,280px)] md:max-h-[min(70vh,400px)] aspect-square flex items-center justify-center shrink-0">
         {/* Glow ambient circle */}
         <div className="absolute inset-0 rounded-full bg-purple-950/20 backdrop-blur-md border border-purple-500/20 shadow-2xl shadow-purple-900/30" />
 
@@ -373,14 +373,14 @@ export const NasubiClock: React.FC<NasubiClockProps> = ({
 
       {/* Digital JST Display Underneath */}
       {showDigital && (
-        <div className="mt-2 text-center select-none flex flex-col items-center">
-          <div className="text-2xl md:text-3xl font-mono font-bold tracking-widest text-white drop-shadow-md">
+        <div className="mt-1 text-center select-none flex flex-col items-center shrink-0">
+          <div className="text-xl md:text-2xl font-mono font-bold tracking-widest text-white drop-shadow-md">
             {digitalTime}
-            <span className="text-xs ml-2 font-sans font-medium text-purple-300/80 px-1.5 py-0.5 rounded bg-purple-950/60 border border-purple-400/20">
+            <span className="text-[10px] ml-1.5 font-sans font-medium text-purple-300/80 px-1 py-0.5 rounded bg-purple-950/60 border border-purple-400/20">
               JST
             </span>
           </div>
-          <div className="text-xs md:text-sm text-purple-200/80 tracking-wider font-medium mt-0.5 drop-shadow">
+          <div className="text-[11px] md:text-xs text-purple-200/90 tracking-wider font-medium drop-shadow pb-0.5">
             {dateString}
           </div>
         </div>
