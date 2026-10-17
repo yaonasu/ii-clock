@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, type User } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, type User } from 'firebase/auth';
 export type { User };
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -11,11 +11,29 @@ export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.r
 const provider = new GoogleAuthProvider();
 provider.addScope(CALENDAR_SCOPE);
 provider.setCustomParameters({
-  prompt: 'select_account'
+  prompt: 'select_account',
+  access_type: 'offline',
 });
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+
+// Token storage key
+const TOKEN_STORAGE_KEY = 'ii_clock_google_access_token';
+
+// Get cached access token from memory or localStorage
+export const getStoredAccessToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+};
+
+export const setStoredAccessToken = (token: string | null): void => {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+  }
+};
 
 // Initialize auth state listener
 export const initAuth = (
@@ -24,14 +42,14 @@ export const initAuth = (
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
+      const storedToken = getStoredAccessToken();
+      if (storedToken) {
+        if (onAuthSuccess) onAuthSuccess(user, storedToken);
       } else if (!isSigningIn) {
-        // Token will be refreshed on next signIn or request
         if (onAuthFailure) onAuthFailure();
       }
     } else {
-      cachedAccessToken = null;
+      setStoredAccessToken(null);
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -43,11 +61,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
-      throw new Error('Failed to obtain Google access token');
+      throw new Error('Googleアカウントからアクセストークンを取得できませんでした。再度ログインしてください。');
     }
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error) {
+    const accessToken = credential.accessToken;
+    setStoredAccessToken(accessToken);
+    return { user: result.user, accessToken };
+  } catch (error: unknown) {
     console.error('Google Sign-in error:', error);
     throw error;
   } finally {
@@ -55,11 +74,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
-export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
-};
-
 export const logout = async () => {
-  await auth.signOut();
-  cachedAccessToken = null;
+  await signOut(auth);
+  setStoredAccessToken(null);
 };

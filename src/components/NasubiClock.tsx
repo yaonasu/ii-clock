@@ -81,7 +81,7 @@ export const NasubiClock: React.FC<NasubiClockProps> = ({
   return (
     <div className="relative flex flex-col items-center justify-center w-full h-full p-2 select-none">
       {/* Clock container */}
-      <div className="relative w-auto h-full max-w-full max-h-[min(38vh,360px)] md:max-h-[min(80vh,460px)] aspect-square flex items-center justify-center">
+      <div className="relative w-auto h-full max-w-full max-h-[min(42vh,360px)] md:max-h-[min(85vh,480px)] aspect-square flex items-center justify-center">
         {/* Glow ambient circle */}
         <div className="absolute inset-0 rounded-full bg-purple-950/20 backdrop-blur-md border border-purple-500/20 shadow-2xl shadow-purple-900/30" />
 

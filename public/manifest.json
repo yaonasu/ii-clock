@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Nasubi Clock",
-  "short_name": "茄子置時計",
-  "description": "茄子の針が時を刻むモダンな多機能卓上置時計アプリ。横固定（画面上部が右）対応。",
+  "name": "ii-clock",
+  "short_name": "ii-clock",
+  "description": "ii-clock - 茄子の針が時を刻むモダンな多機能卓上置時計",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
