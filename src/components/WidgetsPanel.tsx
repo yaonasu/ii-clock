@@ -1,3 +1,4 @@
+import { GOOGLE_CALENDAR_ENABLED } from '../config/features';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, RefreshCw, BellOff, XCircle } from 'lucide-react';
 import { fetchUpcomingEvent, type CalendarEvent } from '../services/calendar';
@@ -249,6 +250,7 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({
 
   // Listen to Auth State
   useEffect(() => {
+    if (!GOOGLE_CALENDAR_ENABLED) return;
     const unsubscribe = initAuth(
       (currentUser, token) => {
         setUser(currentUser);
@@ -266,6 +268,7 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({
 
   // Periodic refresh (every 5 minutes)
   useEffect(() => {
+    if (!GOOGLE_CALENDAR_ENABLED) return;
     const interval = setInterval(async () => {
       const token = await getAccessToken();
       if (token) {
@@ -320,7 +323,7 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({
   }, [notifications.length]);
 
   const activeNotif = notifications[currentNotifIndex];
-  const isCalendarConnected = !!user || !!calendarEvent;
+  const isCalendarConnected = GOOGLE_CALENDAR_ENABLED && (!!user || !!calendarEvent);
 
   return (
     /* "Google連携できていないときは、カウントダウンタイマー等の領域のコンテンツは上下真ん中に配置し、

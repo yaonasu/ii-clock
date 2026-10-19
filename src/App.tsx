@@ -316,11 +316,13 @@ export default function App() {
 
             {/* Right Half (50% width, 100% height): Clock (Large scale up to 82vh) */}
             <div className="w-1/2 h-full min-h-0 flex items-center justify-center overflow-hidden">
-              <NasubiClock
-                numeralStyle={settings.numeralStyle}
-                showDigital={true}
-                isPortrait={false}
-              />
+              <div className="w-full h-full flex items-center justify-center" style={{ transform: "scale(0.9)" }}>
+                <NasubiClock
+                  numeralStyle={settings.numeralStyle}
+                  showDigital={true}
+                  isPortrait={false}
+                />
+              </div>
             </div>
           </div>
         )}

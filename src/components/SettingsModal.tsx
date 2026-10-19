@@ -1,3 +1,4 @@
+import { GOOGLE_CALENDAR_ENABLED } from '../config/features';
 import React, { useState, useRef, useEffect } from 'react';
 import { X, LogOut, Check, ZoomIn, ZoomOut, RotateCcw, Move, Smartphone, ImagePlus, Trash2 } from 'lucide-react';
 import { googleSignIn, logout } from '../services/firebase';
@@ -464,7 +465,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* 2. GOOGLE CALENDAR CONNECTION SECTION */}
           {/* "「Googleログイン」ボタンは設定画面に移動し、連携前はカレンダー予定表示の欄は非表示とする" */}
           {/* ========================================================== */}
-          <section className="space-y-2 pt-3 border-t border-purple-500/20">
+          {GOOGLE_CALENDAR_ENABLED && <section className="space-y-2 pt-3 border-t border-purple-500/20">
             <div className="font-semibold text-purple-200 text-xs">Google カレンダー連携</div>
             {isCalendarConnected || userEmail ? (
               <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-purple-500/20 text-xs">
@@ -507,7 +508,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </p>
               </div>
             )}
-          </section>
+          </section>}
 
           {/* ========================================================== */}
           {/* 3. CLOCK NUMERAL STYLE */}
