@@ -345,10 +345,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <img
                   src={sourceImg}
                   alt="カスタム背景"
-                  className="absolute object-cover pointer-events-none"
+                  className="absolute object-contain pointer-events-none"
                   style={{
-                    width: frameWidth,
-                    height: frameHeight,
+                    width: '100%',
+                    height: '100%',
                     transform: `translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
                     transformOrigin: 'center center',
                   }}
