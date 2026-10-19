@@ -71,6 +71,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [frameOrientation, setFrameOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
+  const previewAreaRef = useRef<HTMLDivElement | null>(null);
+  const [previewArea, setPreviewArea] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!isOpen || !previewAreaRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setPreviewArea({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(previewAreaRef.current);
+    return () => observer.disconnect();
+  }, [isOpen]);
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
     const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
@@ -100,11 +110,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
       setLoginError(null);
     }
-  }, [isOpen, currentBg]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   const currentTransform = frameOrientation === 'landscape' ? landscapeTransform : portraitTransform;
+  const frameRatio = frameOrientation === 'landscape'
+    ? Math.max(viewportSize.width, viewportSize.height) / Math.min(viewportSize.width, viewportSize.height)
+    : Math.min(viewportSize.width, viewportSize.height) / Math.max(viewportSize.width, viewportSize.height);
+  const frameWidth = Math.min(previewArea.width * 0.92, previewArea.height * 0.92 * frameRatio);
+  const frameHeight = frameRatio ? frameWidth / frameRatio : 0;
+  const previewScaleX = frameWidth / (frameOrientation === 'landscape' ? Math.max(viewportSize.width, viewportSize.height) : Math.min(viewportSize.width, viewportSize.height));
+  const previewScaleY = frameHeight / (frameOrientation === 'landscape' ? Math.min(viewportSize.width, viewportSize.height) : Math.max(viewportSize.width, viewportSize.height));
 
   const updateCurrentTransform = (updater: (prev: ImageTransform) => ImageTransform) => {
     if (frameOrientation === 'landscape') {
@@ -223,7 +240,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsDragging(true);
     const rect = previewRef.current?.getBoundingClientRect();
     const ratio = rect ? (frameOrientation === 'landscape' ? Math.max(viewportSize.width, viewportSize.height) : Math.min(viewportSize.width, viewportSize.height)) / rect.width : 1;
-    setDragStart({ x: e.clientX - currentTransform.offsetX / ratio, y: e.clientY - currentTransform.offsetY / ratio });
+    setDragStart({ x: e.clientX - currentTransform.offsetX / ratio, y: e.clientY - currentTransform.offsetY / (rect ? (frameOrientation === 'landscape' ? Math.min(viewportSize.width, viewportSize.height) : Math.max(viewportSize.width, viewportSize.height)) / rect.height : 1) });
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
@@ -314,55 +331,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Interactive Frame Box: Clicking the frame opens file selector if no photo */}
+            {/* The image is drawn outside the selection frame so all regions remain available. */}
             <div
+              ref={previewAreaRef}
               className="relative w-full h-48 md:h-56 bg-black rounded-2xl overflow-hidden border border-purple-500/30 flex items-center justify-center select-none touch-none cursor-pointer"
-              onClick={() => {
-                if (!sourceImg) {
-                  fileInputRef.current?.click();
-                }
-              }}
+              onClick={() => { if (!sourceImg) fileInputRef.current?.click(); }}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
             >
+              {sourceImg && frameWidth > 0 && (
+                <img
+                  src={sourceImg}
+                  alt="カスタム背景"
+                  className="absolute object-contain pointer-events-none"
+                  style={{
+                    width: frameWidth,
+                    height: frameHeight,
+                    transform: `translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
+                    transformOrigin: 'center center',
+                  }}
+                  draggable={false}
+                />
+              )}
               <div
                 ref={previewRef}
-                className="relative overflow-hidden border-2 border-dashed border-amber-400/80 shadow-2xl transition-all duration-300 flex items-center justify-center"
-                style={{
-                  boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7)',
-                  aspectRatio: frameOrientation === 'landscape' ? `${Math.max(viewportSize.width, viewportSize.height)} / ${Math.min(viewportSize.width, viewportSize.height)}` : `${Math.min(viewportSize.width, viewportSize.height)} / ${Math.max(viewportSize.width, viewportSize.height)}`,
-                  width: frameOrientation === 'landscape' ? '92%' : 'auto',
-                  height: frameOrientation === 'portrait' ? '92%' : 'auto',
-                  maxHeight: '92%',
-                  maxWidth: '92%',
-                }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
+                className="relative border-2 border-dashed border-amber-400/80 shadow-2xl pointer-events-none flex items-center justify-center"
+                style={{ width: frameWidth, height: frameHeight, flexShrink: 0 }}
               >
-                {sourceImg ? (
-                  <img
-                    src={sourceImg}
-                    alt="カスタム背景"
-                    className="absolute w-full h-full object-cover pointer-events-none transition-transform duration-75"
-                    style={{
-                      transform: `translate(${currentTransform.offsetX * (previewRef.current?.clientWidth || 1) / (frameOrientation === 'landscape' ? Math.max(viewportSize.width, viewportSize.height) : Math.min(viewportSize.width, viewportSize.height))}px, ${currentTransform.offsetY * (previewRef.current?.clientHeight || 1) / (frameOrientation === 'landscape' ? Math.min(viewportSize.width, viewportSize.height) : Math.max(viewportSize.width, viewportSize.height))}px) scale(${currentTransform.scale})`,
-                      transformOrigin: 'center center',
-                    }}
-                    draggable={false}
-                  />
-                ) : (
-                  /* If no custom photo, display なすび宵（深紫）! */
+                {!sourceImg && (
                   <div
-                    className="absolute inset-0 w-full h-full flex flex-col items-center justify-center text-center p-3"
+                    className="absolute inset-0 flex flex-col items-center justify-center text-center p-3"
                     style={{ background: NASUBI_YOI_GRADIENT }}
                   >
                     <ImagePlus className="w-7 h-7 text-purple-300/80 mb-1" />
-                    <span className="text-xs font-bold text-white drop-shadow">
-                      なすび宵 (深紫)
-                    </span>
-                    <span className="text-[10px] text-purple-300/80 mt-0.5">
-                      タップして写真を選択
-                    </span>
+                    <span className="text-xs font-bold text-white drop-shadow">なすび宵 (深紫)</span>
+                    <span className="text-[10px] text-purple-300/80 mt-0.5">タップして写真を選択</span>
                   </div>
                 )}
 
