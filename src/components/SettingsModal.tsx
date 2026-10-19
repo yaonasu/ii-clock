@@ -347,8 +347,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   alt="カスタム背景"
                   className="absolute object-cover pointer-events-none"
                   style={{
-                    width: frameWidth,
-                    height: frameHeight,
+                    // Portrait editing shows the entire source image in the preview area,
+                    // including portions outside the dashed selection frame.
+                    width: frameOrientation === 'portrait' ? previewArea.width : frameWidth,
+                    height: frameOrientation === 'portrait' ? previewArea.height : frameHeight,
+                    objectFit: frameOrientation === 'portrait' ? 'contain' : 'cover',
                     transform: `translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
                     transformOrigin: 'center center',
                   }}
