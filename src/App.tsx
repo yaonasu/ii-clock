@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Settings } from 'lucide-react';
 import { NasubiClock } from './components/NasubiClock';
 import { WidgetsPanel } from './components/WidgetsPanel';
-import { SettingsModal, type AppSettings, type BackgroundConfig } from './components/SettingsModal';
+import { SettingsModal, type AppSettings, type BackgroundConfig, NASUBI_YOI_GRADIENT } from './components/SettingsModal';
 import { auth } from './services/firebase';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -12,11 +12,9 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const DEFAULT_BG_CONFIG: BackgroundConfig = {
   type: 'preset',
-  dataUrl: 'linear-gradient(135deg, #090314 0%, #1a0826 40%, #2e1065 80%, #05020a 100%)',
+  dataUrl: NASUBI_YOI_GRADIENT,
   portrait: { scale: 1, offsetX: 0, offsetY: 0 },
   landscape: { scale: 1, offsetX: 0, offsetY: 0 },
-  brightness: 1,
-  blur: 0,
 };
 
 export default function App() {
