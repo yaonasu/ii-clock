@@ -12,6 +12,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationClient;
 import com.google.android.gms.auth.api.identity.AuthorizationRequest;
 import com.google.android.gms.auth.api.identity.AuthorizationResult;
 import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
 import com.google.android.gms.common.api.Scope;
 import java.util.Collections;
 
@@ -55,7 +56,10 @@ public class CalendarAuthPlugin extends Plugin {
 
     @PluginMethod
     public void logout(PluginCall call) {
-        client().revokeAccess().addOnCompleteListener(task -> {
+        RevokeAccessRequest request = RevokeAccessRequest.builder()
+            .setScopes(Collections.singletonList(CALENDAR_SCOPE))
+            .build();
+        client().revokeAccess(request).addOnCompleteListener(task -> {
             if (task.isSuccessful()) call.resolve();
             else call.reject("Googleの連携解除に失敗しました", task.getException());
         });
