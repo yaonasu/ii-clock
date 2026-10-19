@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.nasubi.clock',
+  appId: 'com.yaonasu.ii.clock',
   appName: 'ii-clock',
   webDir: 'dist',
   server: {

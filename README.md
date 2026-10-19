@@ -46,3 +46,12 @@ npx cap open android
 ```
 Android Studio が起動したら、上部メニューの `Build` → `Build Bundle(s) / APK(s)` → `Build APK(s)` を選択すると APK が生成されます。
 （出力先: `android/app/build/outputs/apk/debug/app-debug.apk`）
+
+
+## APK の Google 認証
+
+Google Calendar 認証にはGoogle Play Servicesと固定署名鍵が必要です。初回設定は `GOOGLE_AUTH_SETUP.md` を参照してください。
+
+
+### Firebase関連ファイルの整理
+Firebase SDK、Firebase設定JSON、旧Google Identity Services読み込みを削除しました。`package-lock.json` と `bun.lock` は旧Firebase依存を含むため除外しています。GitHub Actionsの `npm install` で依存解決されます。Capacitorの生成済みWebアセットも除外しており、ワークフローの `npm run build` と `npx cap sync android` で再生成されます。
