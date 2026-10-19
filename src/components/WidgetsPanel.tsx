@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, RefreshCw, BellOff, XCircle } from 'lucide-react';
-import { fetchUpcomingEvent, type CalendarEvent } from '../services/calendar';
+import { Play, Pause, RotateCcw, RefreshCw, BellOff, XCircle, Link2, X } from 'lucide-react';
+import { fetchUpcomingEvent, fetchUpcomingEventFromIcal, type CalendarEvent } from '../services/calendar';
 import { googleSignIn, initAuth, getStoredAccessToken, logout, type User } from '../services/firebase';
 import { sound } from '../services/sound';
 
@@ -12,42 +12,6 @@ export interface SmartphoneNotification {
   text: string;
   time: string;
 }
-
-// Sample smartphone notifications for realistic display
-const DEFAULT_PHONE_NOTIFICATIONS: SmartphoneNotification[] = [
-  {
-    id: 'notif-1',
-    appName: 'LINE',
-    appColor: 'bg-emerald-500 text-white',
-    title: '田中 健一',
-    text: '了解です！今日の資料確認しておきます。',
-    time: '3分前',
-  },
-  {
-    id: 'notif-2',
-    appName: 'Gmail',
-    appColor: 'bg-rose-500 text-white',
-    title: 'Google カレンダー',
-    text: 'リマインダー: 14:00 プロジェクト定例会',
-    time: '12分前',
-  },
-  {
-    id: 'notif-3',
-    appName: 'メッセージ',
-    appColor: 'bg-blue-500 text-white',
-    title: '090-1234-5678',
-    text: '認証番号は [582914] です。有効期限は10分です。',
-    time: '25分前',
-  },
-  {
-    id: 'notif-4',
-    appName: 'リマインダー',
-    appColor: 'bg-amber-500 text-white',
-    title: '今日のタスク',
-    text: '帰りに牛乳とコーヒー豆を買う',
-    time: '45分前',
-  },
-];
 
 interface WidgetsPanelProps {
   onAlarmTrigger?: () => void;
@@ -217,7 +181,6 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
     setTimeLeft(timerDuration);
   };
 
-  // Clear timer: initial value becomes 0:00
   const handleClear = () => {
     stopAlarm();
     setTimerRunning(false);
@@ -262,15 +225,25 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
   const progressPercent = timerDuration > 0 ? ((timerDuration - timeLeft) / timerDuration) * 100 : 0;
 
   // ===================== 2. GOOGLE CALENDAR STATE =====================
+  // Supports both OAuth and direct iCal feed URL (works with zero Google policy blocks)
   const [user, setUser] = useState<User | null>(null);
   const [calendarEvent, setCalendarEvent] = useState<CalendarEvent | null>(null);
   const [loadingCalendar, setLoadingCalendar] = useState<boolean>(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
-  const [showCalendarHelp, setShowCalendarHelp] = useState<boolean>(false);
 
-  // Load calendar event
-  const loadEvent = useCallback(async (token: string) => {
+  // iCal connection modal & URL state
+  const [isIcalModalOpen, setIsIcalModalOpen] = useState<boolean>(false);
+  const [icalInputUrl, setIcalInputUrl] = useState<string>('');
+  const [activeIcalUrl, setActiveIcalUrl] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ii_clock_calendar_ical') || null;
+    }
+    return null;
+  });
+
+  // Load calendar event from OAuth
+  const loadEventFromToken = useCallback(async (token: string) => {
     setLoadingCalendar(true);
     setCalendarError(null);
     try {
@@ -282,7 +255,7 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
       if (msg === 'UNAUTHORIZED') {
         logout();
         setUser(null);
-        setCalendarError('セッションが切れました。再度ログインしてください。');
+        setCalendarError('セッションが切れました。再度連携してください。');
       } else {
         setCalendarError('カレンダーの最新予定を取得できませんでした');
       }
@@ -291,17 +264,50 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
     }
   }, []);
 
-  // Listen to Auth State
+  // Load calendar event from iCal URL
+  const loadEventFromIcal = useCallback(async (url: string) => {
+    setLoadingCalendar(true);
+    setCalendarError(null);
+    try {
+      const evt = await fetchUpcomingEventFromIcal(url);
+      setCalendarEvent(evt);
+    } catch (err: unknown) {
+      console.error('Failed to load ical event:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setCalendarError(msg || 'カレンダー予定の取得に失敗しました');
+    } finally {
+      setLoadingCalendar(false);
+    }
+  }, []);
+
+  // Primary loader router
+  const refreshCalendar = useCallback(() => {
+    if (activeIcalUrl) {
+      loadEventFromIcal(activeIcalUrl);
+    } else {
+      const token = getStoredAccessToken();
+      if (token) {
+        loadEventFromToken(token);
+      }
+    }
+  }, [activeIcalUrl, loadEventFromIcal, loadEventFromToken]);
+
+  // Init Auth & iCal on mount
   useEffect(() => {
+    if (activeIcalUrl) {
+      loadEventFromIcal(activeIcalUrl);
+      return;
+    }
+
     const storedToken = getStoredAccessToken();
     const unsubscribe = initAuth(
       (currentUser, token) => {
         setUser(currentUser);
-        loadEvent(token);
+        loadEventFromToken(token);
       },
       () => {
         if (storedToken) {
-          loadEvent(storedToken);
+          loadEventFromToken(storedToken);
         } else {
           setUser(null);
           setCalendarEvent(null);
@@ -309,67 +315,71 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
       }
     );
     return () => unsubscribe();
-  }, [loadEvent]);
+  }, [activeIcalUrl, loadEventFromIcal, loadEventFromToken]);
 
-  // Periodic refresh for calendar (every 5 minutes)
+  // Periodic refresh (every 5 minutes)
   useEffect(() => {
-    const token = getStoredAccessToken();
-    if (!token) return;
     const interval = setInterval(() => {
-      loadEvent(token);
+      refreshCalendar();
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [loadEvent]);
+  }, [refreshCalendar]);
 
-  // Robust Sign In handler with clear feedback
+  // Google OAuth sign-in handler with automatic iCal fallback if policy error occurs
   const handleSignIn = async () => {
     setIsSigningIn(true);
     setCalendarError(null);
-    setShowCalendarHelp(false);
     try {
       const res = await googleSignIn();
       if (res) {
         setUser(res.user);
-        await loadEvent(res.accessToken);
+        await loadEventFromToken(res.accessToken);
       }
     } catch (err: unknown) {
       console.error('Sign in error:', err);
       const errStr = err instanceof Error ? err.message : String(err);
-      if (errStr.includes('popup-blocked') || errStr.includes('popup-closed')) {
-        setCalendarError('ポップアップがブロックされました。ブラウザのポップアップを許可してください。');
-        setShowCalendarHelp(true);
+      // If blocked by Google OAuth policy or WebView restriction:
+      if (
+        errStr.includes('ポリシー') ||
+        errStr.includes('disallowed_useragent') ||
+        errStr.includes('invalid') ||
+        errStr.includes('popup-blocked')
+      ) {
+        // Open iCal URL connector modal which is 100% reliable
+        setIsIcalModalOpen(true);
+        setCalendarError('Googleのポリシー制限により、カレンダーURL(iCal)での連携が推奨されます。');
       } else {
-        setCalendarError(`ログインに失敗しました: ${errStr}`);
+        setCalendarError(`ログインエラー: ${errStr}`);
       }
     } finally {
       setIsSigningIn(false);
     }
   };
 
-  // Mock sample schedule for quick testing when offline or in preview
-  const handleSetSampleCalendar = () => {
-    const now = new Date();
-    const startTime = new Date(now.getTime() + 45 * 60 * 1000);
-    const endTime = new Date(now.getTime() + 105 * 60 * 1000);
-    setCalendarEvent({
-      id: 'sample-1',
-      summary: 'プロジェクト進捗確認ミーティング',
-      start: { dateTime: startTime.toISOString() },
-      end: { dateTime: endTime.toISOString() },
-      location: '第2会議室 / Google Meet',
-      isAllDay: false,
-      timeFormatted: `今日 ${startTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 〜 ${endTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`,
-      relativeTime: 'あと 45 分後',
-    });
+  // Save iCal URL
+  const handleSaveIcalUrl = () => {
+    if (!icalInputUrl.trim()) return;
+    const cleanUrl = icalInputUrl.trim();
+    localStorage.setItem('ii_clock_calendar_ical', cleanUrl);
+    setActiveIcalUrl(cleanUrl);
+    setIsIcalModalOpen(false);
+    loadEventFromIcal(cleanUrl);
+  };
+
+  // Clear Calendar connection
+  const handleDisconnectCalendar = () => {
+    localStorage.removeItem('ii_clock_calendar_ical');
+    setActiveIcalUrl(null);
+    logout();
+    setUser(null);
+    setCalendarEvent(null);
     setCalendarError(null);
   };
 
   // ===================== 3. SMARTPHONE NOTIFICATIONS =====================
-  // "通知は本アプリの通知ではなくて、インストールされたスマホの通知を表示する"
-  // Only show smartphone notifications if actual notifications are received
+  // "スマホの通知は取れない場合は何も表示しない"
   const [notifications, setNotifications] = useState<SmartphoneNotification[]>([]);
   const [currentNotifIndex, setCurrentNotifIndex] = useState<number>(0);
-  const [notifProgress, setNotifProgress] = useState<number>(0);
 
   // Listen to incoming native notifications from Android NotificationListenerService
   useEffect(() => {
@@ -379,7 +389,7 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
         setNotifications((prev) => [
           {
             id: String(Date.now()),
-            appName: data.appName || 'スマホ通知',
+            appName: data.appName || '通知',
             appColor: 'bg-indigo-500 text-white',
             title: data.title || '',
             text: data.text,
@@ -403,35 +413,21 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
   // 15-second cycle through latest notifications
   useEffect(() => {
     if (notifications.length === 0) return;
-
-    // Reset progress to 0
-    setNotifProgress(0);
-
-    const progressStepMs = 100;
-    const totalMs = 15000; // 15 seconds!
-
-    const progressTimer = setInterval(() => {
-      setNotifProgress((prev) => Math.min(100, prev + (progressStepMs / totalMs) * 100));
-    }, progressStepMs);
-
     const cycleTimer = setInterval(() => {
       setCurrentNotifIndex((prev) => (prev + 1) % notifications.length);
-      setNotifProgress(0);
-    }, totalMs);
+    }, 15000); // 15 seconds!
 
-    return () => {
-      clearInterval(progressTimer);
-      clearInterval(cycleTimer);
-    };
-  }, [notifications.length, currentNotifIndex]);
+    return () => clearInterval(cycleTimer);
+  }, [notifications.length]);
 
-  const activeNotif = notifications[currentNotifIndex] || notifications[0];
+  const activeNotif = notifications[currentNotifIndex];
+  const isCalendarConnected = !!user || !!activeIcalUrl || !!calendarEvent;
 
   return (
-    <div className="flex flex-col justify-between w-full h-full max-w-lg mx-auto py-1 px-1 sm:px-2 gap-1.5 select-none overflow-hidden">
+    <div className="flex flex-col justify-center w-full h-full max-w-lg mx-auto py-1 px-1 sm:px-2 gap-2 select-none overflow-hidden">
       {/* 1. COUNTDOWN TIMER */}
       <div
-        className={`relative rounded-xl p-1.5 sm:p-2 transition-all duration-300 border shrink-0 ${
+        className={`relative rounded-xl p-2 sm:p-2.5 transition-all duration-300 border shrink-0 ${
           timerCompletedFlash
             ? 'bg-rose-950/85 border-rose-500 shadow-lg shadow-rose-900/60 ring-2 ring-rose-500/50'
             : 'bg-black/45 backdrop-blur-md border-purple-500/20 shadow-md'
@@ -546,53 +542,66 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
       </div>
 
       {/* 2. GOOGLE CALENDAR NEXT EVENT (1 item) */}
-      <div className="relative rounded-xl p-1.5 sm:p-2 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[48px]">
-        {user && (
-          <button
-            onClick={() => {
-              const token = getStoredAccessToken();
-              if (token) loadEvent(token);
-            }}
-            disabled={loadingCalendar}
-            className="absolute top-1.5 right-1.5 text-purple-300/70 hover:text-white p-0.5 rounded transition cursor-pointer"
-            title="予定を更新"
-          >
-            <RefreshCw className={`w-3 h-3 ${loadingCalendar ? 'animate-spin' : ''}`} />
-          </button>
+      <div className="relative rounded-xl p-2 sm:p-2.5 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[50px]">
+        {isCalendarConnected && (
+          <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+            <button
+              onClick={refreshCalendar}
+              disabled={loadingCalendar}
+              className="text-purple-300/70 hover:text-white p-0.5 rounded transition cursor-pointer"
+              title="予定を更新"
+            >
+              <RefreshCw className={`w-3 h-3 ${loadingCalendar ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={handleDisconnectCalendar}
+              className="text-rose-400/60 hover:text-rose-300 p-0.5 rounded transition cursor-pointer"
+              title="連携を解除"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
         )}
 
-        {!user && !calendarEvent ? (
-          <div className="flex items-center justify-center py-0.5">
-            <button
-              onClick={handleSignIn}
-              disabled={isSigningIn}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-white text-gray-800 text-[11px] font-semibold hover:bg-gray-100 shadow transition cursor-pointer disabled:opacity-50 active:scale-95"
-            >
-              <svg viewBox="0 0 48 48" className="w-3.5 h-3.5">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-              </svg>
-              <span>{isSigningIn ? '接続中...' : 'Googleログイン'}</span>
-            </button>
+        {!isCalendarConnected ? (
+          <div className="flex flex-col items-center justify-center gap-1 py-0.5">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSignIn}
+                disabled={isSigningIn}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white text-gray-800 text-[11px] font-semibold hover:bg-gray-100 shadow transition cursor-pointer disabled:opacity-50 active:scale-95"
+              >
+                <svg viewBox="0 0 48 48" className="w-3.5 h-3.5">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                </svg>
+                <span>{isSigningIn ? '接続中...' : 'Googleログイン'}</span>
+              </button>
+
+              <button
+                onClick={() => setIsIcalModalOpen(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-[11px] font-medium border border-purple-500/30 transition cursor-pointer active:scale-95"
+                title="GoogleカレンダーのiCal形式URLで連携"
+              >
+                <Link2 className="w-3 h-3 text-purple-300" />
+                <span>カレンダーURLで連携</span>
+              </button>
+            </div>
+
+            {calendarError && (
+              <span className="text-[10px] text-amber-300 text-center leading-tight mt-0.5">
+                {calendarError}
+              </span>
+            )}
           </div>
         ) : loadingCalendar ? (
-          <div className="py-0.5 text-center text-xs text-purple-300/70">
+          <div className="py-1 text-center text-xs text-purple-300/70">
             予定を読み込み中...
           </div>
-        ) : calendarError ? (
-          <div className="py-0.5 text-center text-[10px] text-rose-300">
-            <span>{calendarError}</span>
-            <button
-              onClick={handleSignIn}
-              className="block mx-auto mt-0.5 underline text-purple-300 hover:text-white"
-            >
-              再ログインする
-            </button>
-          </div>
         ) : calendarEvent ? (
-          <div className="flex flex-col gap-0.5 pr-4">
+          <div className="flex flex-col gap-0.5 pr-8">
             <div className="flex items-start justify-between gap-1">
               <span className="font-semibold text-xs sm:text-sm text-white line-clamp-1">
                 {calendarEvent.summary}
@@ -611,13 +620,14 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
             </div>
           </div>
         ) : (
-          <div className="py-0.5 text-center text-[11px] text-purple-300/60">
+          <div className="py-1 text-center text-[11px] text-purple-300/60">
             直近の予定はありません
           </div>
         )}
       </div>
 
       {/* 3. SMARTPHONE NOTIFICATION (Only displayed when phone notifications are available) */}
+      {/* "スマホの通知は取れない場合は何も表示しない" */}
       {notifications.length > 0 && activeNotif && (
         <div className="relative rounded-xl p-1.5 sm:p-2 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[46px] overflow-hidden">
           <div className="flex items-start gap-2 transition-opacity duration-300">
@@ -636,6 +646,60 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
               <p className="text-[10px] sm:text-[11px] text-white/90 truncate leading-tight">
                 {activeNotif.text}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ICAL CALENDAR CONNECTION MODAL (100% reliable on Android APK & Web) */}
+      {isIcalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 text-white">
+          <div className="w-full max-w-sm bg-slate-900 border border-purple-500/30 rounded-2xl p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-purple-500/20 pb-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-purple-200">
+                <Link2 className="w-4 h-4 text-purple-400" />
+                <span>GoogleカレンダーURL連携</span>
+              </div>
+              <button
+                onClick={() => setIsIcalModalOpen(false)}
+                className="p-1 rounded-full hover:bg-white/10 text-purple-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-[11px] text-purple-300/80 leading-relaxed space-y-1">
+              <p className="font-semibold text-white">【URLの取得手順（1分で完了）】</p>
+              <ol className="list-decimal pl-4 space-y-0.5">
+                <li>PCまたはブラウザで Google カレンダーを開く</li>
+                <li>対象カレンダーの「設定」→「カレンダーの統合」を開く</li>
+                <li><strong>「iCal 形式の非公開 URL」</strong> をコピーして下に貼り付け</li>
+              </ol>
+              <p className="text-[10px] text-purple-400 pt-0.5">※ Googleポリシーやログイン制限の影響を受けずに確実に最新予定を表示できます。</p>
+            </div>
+
+            <input
+              type="url"
+              placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+              value={icalInputUrl}
+              onChange={(e) => setIcalInputUrl(e.target.value)}
+              className="w-full px-3 py-2 text-xs rounded-xl bg-black/60 border border-purple-500/30 text-white placeholder-purple-300/40 focus:outline-none focus:border-purple-400 font-mono"
+            />
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => setIsIcalModalOpen(false)}
+                className="w-1/3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleSaveIcalUrl}
+                disabled={!icalInputUrl.trim()}
+                className="w-2/3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition shadow-lg cursor-pointer"
+              >
+                カレンダーを連携する
+              </button>
             </div>
           </div>
         </div>

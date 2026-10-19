@@ -1,15 +1,23 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Image as ImageIcon, LogOut, Check, ZoomIn, ZoomOut, RotateCcw, Move, Smartphone, ArrowLeft } from 'lucide-react';
 import { logout } from '../services/firebase';
+
+export interface ImageTransform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
 
 export interface BackgroundConfig {
   type: 'custom' | 'preset';
   dataUrl: string;
-  brightness: number;
-  blur: number;
-  scale: number;
-  offsetX: number;
-  offsetY: number;
+  portrait: ImageTransform;
+  landscape: ImageTransform;
+  brightness?: number;
+  blur?: number;
+  scale?: number;
+  offsetX?: number;
+  offsetY?: number;
 }
 
 export interface AppSettings {
@@ -64,18 +72,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Background positioning state (integrated directly)
   const [isPositioningBg, setIsPositioningBg] = useState<boolean>(false);
   const [sourceImg, setSourceImg] = useState<string | null>(null);
-  const [scale, setScale] = useState<number>(1);
-  const [offsetX, setOffsetX] = useState<number>(0);
-  const [offsetY, setOffsetY] = useState<number>(0);
-  const [frameOrientation, setFrameOrientation] = useState<'landscape' | 'portrait'>('landscape');
 
+  // SEPARATE TRANSFORMS FOR PORTRAIT AND LANDSCAPE
+  // "背景に写真を選ぶ場合、縦と横で拡縮や位置は別で保持する"
+  const [landscapeTransform, setLandscapeTransform] = useState<ImageTransform>({
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
+  const [portraitTransform, setPortraitTransform] = useState<ImageTransform>({
+    scale: 1,
+    offsetX: 0,
+    offsetY: 0,
+  });
+
+  const [frameOrientation, setFrameOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Dragging state
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  // Initialize transforms from currentBg
+  useEffect(() => {
+    if (isOpen) {
+      if (currentBg.type === 'custom' && currentBg.dataUrl) {
+        setSourceImg(currentBg.dataUrl);
+        setLandscapeTransform(
+          currentBg.landscape || {
+            scale: currentBg.scale || 1,
+            offsetX: currentBg.offsetX || 0,
+            offsetY: currentBg.offsetY || 0,
+          }
+        );
+        setPortraitTransform(
+          currentBg.portrait || {
+            scale: currentBg.scale || 1,
+            offsetX: currentBg.offsetX || 0,
+            offsetY: currentBg.offsetY || 0,
+          }
+        );
+      }
+      setIsPositioningBg(false);
+    }
+  }, [isOpen, currentBg]);
+
   if (!isOpen) return null;
+
+  const currentTransform = frameOrientation === 'landscape' ? landscapeTransform : portraitTransform;
+
+  const updateCurrentTransform = (updater: (prev: ImageTransform) => ImageTransform) => {
+    if (frameOrientation === 'landscape') {
+      setLandscapeTransform(updater);
+    } else {
+      setPortraitTransform(updater);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -111,9 +163,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const compressed = canvas.toDataURL('image/jpeg', 0.85);
 
         setSourceImg(compressed);
-        setScale(1);
-        setOffsetX(0);
-        setOffsetY(0);
+        setLandscapeTransform({ scale: 1, offsetX: 0, offsetY: 0 });
+        setPortraitTransform({ scale: 1, offsetX: 0, offsetY: 0 });
         setIsPositioningBg(true);
       };
       img.src = reader.result as string;
@@ -125,33 +176,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Drag handlers
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
-    setDragStart({ x: e.clientX - offsetX, y: e.clientY - offsetY });
+    setDragStart({ x: e.clientX - currentTransform.offsetX, y: e.clientY - currentTransform.offsetY });
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging) return;
-    setOffsetX(e.clientX - dragStart.x);
-    setOffsetY(e.clientY - dragStart.y);
+    const newX = e.clientX - dragStart.x;
+    const newY = e.clientY - dragStart.y;
+    updateCurrentTransform((prev) => ({
+      ...prev,
+      offsetX: newX,
+      offsetY: newY,
+    }));
   };
 
   const handlePointerUp = () => {
     setIsDragging(false);
   };
 
-  // Save selected custom image
+  // Save selected custom image with SEPARATE landscape & portrait transforms
   const handleSaveCustom = () => {
     if (!sourceImg) return;
     onSaveBackground({
       type: 'custom',
       dataUrl: sourceImg,
+      portrait: portraitTransform,
+      landscape: landscapeTransform,
+      scale: landscapeTransform.scale,
+      offsetX: landscapeTransform.offsetX,
+      offsetY: landscapeTransform.offsetY,
       brightness: 1,
       blur: 0,
-      scale,
-      offsetX,
-      offsetY,
     });
     setIsPositioningBg(false);
+    onClose(); // Close modal immediately so user sees background applied to the clock!
   };
 
   // Select a preset directly
@@ -159,12 +218,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onSaveBackground({
       type: 'preset',
       dataUrl: preset.dataUrl,
+      portrait: { scale: 1, offsetX: 0, offsetY: 0 },
+      landscape: { scale: 1, offsetX: 0, offsetY: 0 },
       brightness: 1,
       blur: 0,
       scale: 1,
       offsetX: 0,
       offsetY: 0,
     });
+    onClose(); // Close modal immediately so user sees background applied to the clock!
   };
 
   return (
@@ -216,10 +278,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             /* INTEGRATED BACKGROUND POSITIONING PANEL */
             /* ========================================================== */
             <div className="space-y-3">
+              {/* Orientation Toggle */}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-purple-200 flex items-center gap-1.5">
                   <Move className="w-3.5 h-3.5 text-purple-400" />
-                  <span>画面枠の基準:</span>
+                  <span>編集する向き:</span>
                 </span>
                 <div className="flex items-center gap-1.5 bg-black/50 p-1 rounded-xl border border-purple-500/20 text-xs">
                   <button
@@ -246,6 +309,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              <div className="text-[11px] text-purple-300/70">
+                ※ 縦向き・横向きそれぞれ個別に位置と拡縮を調整・保持できます
+              </div>
+
               {/* Preview Box with Frame */}
               <div className="relative w-full h-56 md:h-64 bg-black rounded-2xl overflow-hidden border border-purple-500/30 flex items-center justify-center select-none touch-none">
                 <div
@@ -268,7 +335,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       alt="カスタム背景"
                       className="absolute pointer-events-none max-w-none transition-transform duration-75"
                       style={{
-                        transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})`,
+                        transform: `translate(${currentTransform.offsetX}px, ${currentTransform.offsetY}px) scale(${currentTransform.scale})`,
                         transformOrigin: 'center center',
                       }}
                       draggable={false}
@@ -277,23 +344,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div className="px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 text-[10px] text-white/80 flex items-center gap-1 shadow">
                       <Move className="w-3 h-3 text-amber-300" />
-                      <span>ドラッグで移動</span>
+                      <span>ドラッグで位置調整 ({frameOrientation === 'landscape' ? '横' : '縦'})</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Scale Zoom Controls */}
+              {/* Scale Zoom Controls for active orientation */}
               <div className="p-2.5 rounded-xl bg-black/40 border border-purple-500/20 space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-purple-200">
                   <span className="flex items-center gap-1 font-medium">
-                    <ZoomIn className="w-3.5 h-3.5 text-purple-400" /> 拡大・縮小
+                    <ZoomIn className="w-3.5 h-3.5 text-purple-400" /> 拡大・縮小 ({frameOrientation === 'landscape' ? '横画面' : '縦画面'})
                   </span>
-                  <span className="font-mono text-purple-300">{Math.round(scale * 100)}%</span>
+                  <span className="font-mono text-purple-300">{Math.round(currentTransform.scale * 100)}%</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(1))))}
+                    onClick={() =>
+                      updateCurrentTransform((prev) => ({
+                        ...prev,
+                        scale: Math.max(0.5, Number((prev.scale - 0.1).toFixed(1))),
+                      }))
+                    }
                     className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-purple-200 cursor-pointer"
                   >
                     <ZoomOut className="w-4 h-4" />
@@ -303,24 +375,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     min="0.5"
                     max="3.0"
                     step="0.05"
-                    value={scale}
-                    onChange={(e) => setScale(parseFloat(e.target.value))}
+                    value={currentTransform.scale}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      updateCurrentTransform((prev) => ({ ...prev, scale: val }));
+                    }}
                     className="flex-1 accent-purple-500 cursor-pointer"
                   />
                   <button
-                    onClick={() => setScale((s) => Math.min(3.0, Number((s + 0.1).toFixed(1))))}
+                    onClick={() =>
+                      updateCurrentTransform((prev) => ({
+                        ...prev,
+                        scale: Math.min(3.0, Number((prev.scale + 0.1).toFixed(1))),
+                      }))
+                    }
                     className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-purple-200 cursor-pointer"
                   >
                     <ZoomIn className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      setScale(1);
-                      setOffsetX(0);
-                      setOffsetY(0);
-                    }}
+                    onClick={() =>
+                      updateCurrentTransform(() => ({
+                        scale: 1,
+                        offsetX: 0,
+                        offsetY: 0,
+                      }))
+                    }
                     className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-purple-200 cursor-pointer"
-                    title="リセット"
+                    title="位置とサイズをリセット"
                   >
                     <RotateCcw className="w-4 h-4" />
                   </button>
@@ -330,16 +412,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={() => setIsPositioningBg(false)}
-                  className="w-1/3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition cursor-pointer"
+                  className="w-1/3 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition cursor-pointer"
                 >
                   戻る
                 </button>
                 <button
                   onClick={handleSaveCustom}
-                  className="w-2/3 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-900/40 transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-2/3 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-900/40 transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-98"
                 >
                   <Check className="w-4 h-4" />
-                  <span>この位置で背景に設定</span>
+                  <span>この設定で背景に適用</span>
                 </button>
               </div>
             </div>
@@ -348,7 +430,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             /* UNIFIED MAIN SETTINGS VIEW */
             /* ========================================================== */
             <>
-              {/* 1. BACKGROUND SETTINGS (Integrated into same panel!) */}
+              {/* 1. BACKGROUND SETTINGS */}
               <section className="space-y-3">
                 <div className="flex items-center gap-2 font-semibold text-purple-200">
                   <ImageIcon className="w-4 h-4 text-pink-400" />
@@ -358,7 +440,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Button: 自分の写真・画像を使用する */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-900/30 border border-purple-400/40 transition cursor-pointer active:scale-98"
+                  className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md shadow-purple-900/30 border border-purple-400/40 transition cursor-pointer active:scale-98"
                 >
                   <ImageIcon className="w-4 h-4" />
                   <span>自分の写真・画像を使用する</span>
@@ -370,14 +452,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       onClick={() => {
                         setSourceImg(currentBg.dataUrl);
-                        setScale(currentBg.scale || 1);
-                        setOffsetX(currentBg.offsetX || 0);
-                        setOffsetY(currentBg.offsetY || 0);
+                        setLandscapeTransform(
+                          currentBg.landscape || {
+                            scale: currentBg.scale || 1,
+                            offsetX: currentBg.offsetX || 0,
+                            offsetY: currentBg.offsetY || 0,
+                          }
+                        );
+                        setPortraitTransform(
+                          currentBg.portrait || {
+                            scale: currentBg.scale || 1,
+                            offsetX: currentBg.offsetX || 0,
+                            offsetY: currentBg.offsetY || 0,
+                          }
+                        );
                         setIsPositioningBg(true);
                       }}
                       className="px-2.5 py-1 rounded-lg bg-purple-700/60 hover:bg-purple-600 text-white text-[11px] font-medium cursor-pointer"
                     >
-                      位置・サイズ調整
+                      位置・サイズ再調整
                     </button>
                   </div>
                 )}

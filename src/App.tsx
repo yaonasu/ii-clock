@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Settings } from 'lucide-react';
 import { NasubiClock } from './components/NasubiClock';
 import { WidgetsPanel } from './components/WidgetsPanel';
@@ -13,11 +13,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 const DEFAULT_BG_CONFIG: BackgroundConfig = {
   type: 'preset',
   dataUrl: 'linear-gradient(135deg, #090314 0%, #1a0826 40%, #2e1065 80%, #05020a 100%)',
+  portrait: { scale: 1, offsetX: 0, offsetY: 0 },
+  landscape: { scale: 1, offsetX: 0, offsetY: 0 },
   brightness: 1,
   blur: 0,
-  scale: 1,
-  offsetX: 0,
-  offsetY: 0,
 };
 
 export default function App() {
@@ -55,7 +54,16 @@ export default function App() {
   const [bgConfig, setBgConfig] = useState<BackgroundConfig>(() => {
     try {
       const saved = localStorage.getItem('ii_clock_bg');
-      return saved ? { ...DEFAULT_BG_CONFIG, ...JSON.parse(saved) } : DEFAULT_BG_CONFIG;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_BG_CONFIG,
+          ...parsed,
+          portrait: parsed.portrait || { scale: parsed.scale || 1, offsetX: parsed.offsetX || 0, offsetY: parsed.offsetY || 0 },
+          landscape: parsed.landscape || { scale: parsed.scale || 1, offsetX: parsed.offsetX || 0, offsetY: parsed.offsetY || 0 },
+        };
+      }
+      return DEFAULT_BG_CONFIG;
     } catch {
       return DEFAULT_BG_CONFIG;
     }
@@ -63,7 +71,7 @@ export default function App() {
 
   // 50:50 Area Position State: swaps every 3 minutes!
   // In Landscape:
-  // Expected initial: Left half = 3 widgets, Right half = Clock
+  // Initial: Left half = 3 widgets, Right half = Clock
   // Swapped: Left half = Clock, Right half = 3 widgets
   // In Portrait:
   // Initial: Top half = Clock, Bottom half = 3 widgets
@@ -187,6 +195,27 @@ export default function App() {
     return () => clearInterval(swapInterval);
   }, []);
 
+  // Compute active image transform depending on current orientation (Portrait vs Landscape)
+  // "背景に写真を選ぶ場合、縦と横で拡縮や位置は別で保持する"
+  const activeTransform = useMemo(() => {
+    if (isPortrait) {
+      return (
+        bgConfig.portrait || {
+          scale: bgConfig.scale || 1,
+          offsetX: bgConfig.offsetX || 0,
+          offsetY: bgConfig.offsetY || 0,
+        }
+      );
+    }
+    return (
+      bgConfig.landscape || {
+        scale: bgConfig.scale || 1,
+        offsetX: bgConfig.offsetX || 0,
+        offsetY: bgConfig.offsetY || 0,
+      }
+    );
+  }, [isPortrait, bgConfig]);
+
   const overlayOpacity = isFullBrightness ? 0 : 0.5;
 
   return (
@@ -194,43 +223,46 @@ export default function App() {
       className="relative w-full h-[100dvh] h-screen overflow-hidden bg-black select-none font-sans text-white touch-manipulation"
       onClick={handleScreenTap}
     >
-      {/* Background Layer: supports custom image with transform scale/pan, or preset gradient */}
+      {/* ========================================================== */}
+      {/* BACKGROUND LAYER: Rendered at z-0 so it is always 100% visible on main clock screen! */}
+      {/* Supports separate transforms for portrait & landscape */}
+      {/* ========================================================== */}
       {bgConfig.type === 'custom' && bgConfig.dataUrl ? (
-        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none flex items-center justify-center">
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none flex items-center justify-center">
           <img
             src={bgConfig.dataUrl}
             alt="カスタム背景"
-            className="w-full h-full object-cover pointer-events-none transition-transform duration-200"
+            className="w-full h-full object-cover pointer-events-none transition-transform duration-150"
             style={{
-              transform: `translate(${bgConfig.offsetX || 0}px, ${bgConfig.offsetY || 0}px) scale(${bgConfig.scale || 1})`,
+              transform: `translate(${activeTransform.offsetX}px, ${activeTransform.offsetY}px) scale(${activeTransform.scale})`,
               transformOrigin: 'center center',
             }}
           />
         </div>
       ) : (
         <div
-          className="fixed inset-0 -z-10 transition-all duration-700 pointer-events-none"
+          className="absolute inset-0 z-0 transition-all duration-700 pointer-events-none"
           style={{ background: bgConfig.dataUrl || DEFAULT_BG_CONFIG.dataUrl }}
         />
       )}
 
-      {/* Ambient Dark/Contrast Tint */}
-      <div className="fixed inset-0 -z-10 bg-black/35 backdrop-blur-[1px] pointer-events-none" />
+      {/* Ambient Dark/Contrast Tint: z-0 */}
+      <div className="absolute inset-0 z-0 bg-black/35 backdrop-blur-[1px] pointer-events-none" />
 
-      {/* 50% Dimming Overlay (Active = 50% brightness, Tap = 100% for 30s) */}
+      {/* 50% Dimming Overlay (Active = 50% brightness, Tap = 100% for 30s): z-20 */}
       <div
-        className="fixed inset-0 z-30 bg-black pointer-events-none transition-opacity duration-700 ease-in-out"
+        className="fixed inset-0 z-20 bg-black pointer-events-none transition-opacity duration-700 ease-in-out"
         style={{ opacity: overlayOpacity }}
       />
 
-      {/* Subtle Floating Settings Button (Top-Right, no title bar!) */}
+      {/* Subtle Floating Settings Button (Top-Right, no title bar!): z-40 */}
       <button
         onClick={(e) => {
           e.stopPropagation();
           handleScreenTap();
           setIsSettingsOpen(true);
         }}
-        className="fixed top-2 right-2 z-40 p-2 rounded-full bg-black/50 hover:bg-black/80 text-white/70 hover:text-white border border-white/20 transition shadow-lg cursor-pointer active:scale-95"
+        className="fixed top-2.5 right-2.5 z-40 p-2.5 rounded-full bg-black/60 hover:bg-black/85 text-white/80 hover:text-white border border-white/20 transition shadow-xl cursor-pointer active:scale-95"
         title="設定"
       >
         <Settings className="w-4 h-4" />
@@ -242,7 +274,7 @@ export default function App() {
       {/* ・縦向き: 上下に時計と３種の表示を50:50で配置 */}
       {/* ・3分に1回場所を入れ替える */}
       {/* ========================================================== */}
-      <div className="relative z-20 w-full h-full overflow-hidden">
+      <div className="relative z-10 w-full h-full overflow-hidden">
         {isPortrait ? (
           /* PORTRAIT: Top / Bottom 50:50 Split */
           <div
@@ -255,6 +287,7 @@ export default function App() {
               <NasubiClock
                 numeralStyle={settings.numeralStyle}
                 showDigital={true}
+                isPortrait={true}
               />
             </div>
 
@@ -265,7 +298,7 @@ export default function App() {
           </div>
         ) : (
           /* LANDSCAPE: Exactly Left Half = 3 Widgets, Right Half = Clock */
-          /* Perfectly centered vertically, no diagonal offset */
+          /* Perfectly centered vertically, no vertical offset! */
           <div
             className={`flex w-full h-full p-2 md:p-4 gap-4 overflow-hidden items-center justify-center transition-all duration-700 ${
               isSwapped ? 'flex-row-reverse' : 'flex-row'
@@ -276,11 +309,12 @@ export default function App() {
               <WidgetsPanel onAlarmTrigger={handleScreenTap} />
             </div>
 
-            {/* Right Half (50% width, 100% height): Clock */}
+            {/* Right Half (50% width, 100% height): Clock (Large scale up to 82vh) */}
             <div className="w-1/2 h-full min-h-0 flex items-center justify-center overflow-hidden">
               <NasubiClock
                 numeralStyle={settings.numeralStyle}
                 showDigital={true}
+                isPortrait={false}
               />
             </div>
           </div>

@@ -3,11 +3,13 @@ import React, { useEffect, useState, useMemo } from 'react';
 interface NasubiClockProps {
   numeralStyle?: 'arabic' | 'roman' | 'minimal';
   showDigital?: boolean;
+  isPortrait?: boolean;
 }
 
 export const NasubiClock: React.FC<NasubiClockProps> = ({
   numeralStyle = 'arabic',
   showDigital = true,
+  isPortrait = false,
 }) => {
   const [now, setNow] = useState<Date>(() => new Date());
 
@@ -80,8 +82,14 @@ export const NasubiClock: React.FC<NasubiClockProps> = ({
 
   return (
     <div className="relative flex flex-col items-center justify-center w-full h-full p-1 select-none">
-      {/* Clock container: scaled so date and digital display never clip */}
-      <div className="relative w-auto h-full max-w-full max-h-[min(34vh,280px)] md:max-h-[min(70vh,400px)] aspect-square flex items-center justify-center shrink-0">
+      {/* Clock container: in landscape, scale up to fill available area; in portrait, keep compact */}
+      <div
+        className={`relative w-auto h-full max-w-full aspect-square flex items-center justify-center shrink-0 ${
+          isPortrait
+            ? 'max-h-[min(34vh,280px)]'
+            : 'max-h-[min(82vh,460px)] max-w-[min(46vw,82vh,460px)]'
+        }`}
+      >
         {/* Glow ambient circle */}
         <div className="absolute inset-0 rounded-full bg-purple-950/20 backdrop-blur-md border border-purple-500/20 shadow-2xl shadow-purple-900/30" />
 
