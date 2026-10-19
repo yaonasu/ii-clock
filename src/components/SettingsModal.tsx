@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, LogOut, Check, ZoomIn, ZoomOut, RotateCcw, Move, Smartphone, ImagePlus, Trash2 } from 'lucide-react';
-import { logout } from '../services/firebase';
+import { googleSignIn, logout } from '../services/firebase';
 
 export interface ImageTransform {
   scale: number;
@@ -10,7 +10,7 @@ export interface ImageTransform {
 
 export interface BackgroundConfig {
   type: 'custom' | 'preset';
-  dataUrl: string; // If empty string or 'default', it uses なすび宵
+  dataUrl: string;
   portrait: ImageTransform;
   landscape: ImageTransform;
   scale?: number;
@@ -33,6 +33,8 @@ interface SettingsModalProps {
   currentBg: BackgroundConfig;
   onSaveBackground: (bg: BackgroundConfig) => void;
   userEmail?: string | null;
+  isCalendarConnected?: boolean;
+  onGoogleLoginSuccess?: () => void;
   onLogoutSuccess?: () => void;
 }
 
@@ -46,9 +48,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   currentBg,
   onSaveBackground,
   userEmail,
+  isCalendarConnected = false,
+  onGoogleLoginSuccess,
   onLogoutSuccess,
 }) => {
-  // Photo source: if custom, it holds dataUrl; otherwise empty/null
+  // Photo source: if custom, it holds dataUrl; otherwise null
   const [sourceImg, setSourceImg] = useState<string | null>(null);
 
   // Separate transforms for Portrait and Landscape
@@ -66,6 +70,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [frameOrientation, setFrameOrientation] = useState<'landscape' | 'portrait'>('landscape');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Google Login state inside settings
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   // Dragging state
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -82,6 +90,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setLandscapeTransform({ scale: 1, offsetX: 0, offsetY: 0 });
         setPortraitTransform({ scale: 1, offsetX: 0, offsetY: 0 });
       }
+      setLoginError(null);
     }
   }, [isOpen, currentBg]);
 
@@ -112,6 +121,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           portrait: next,
         });
       }
+    }
+  };
+
+  // Google sign in from Settings
+  const handleGoogleLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      const res = await googleSignIn();
+      if (res && onGoogleLoginSuccess) {
+        onGoogleLoginSuccess();
+      }
+    } catch (err: unknown) {
+      console.error('Settings sign-in error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setLoginError(msg || 'ログインに失敗しました');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -236,7 +263,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           onChange={handleFileChange}
         />
 
-        {/* Settings Body: 1 single screen with photo adjustment and numeral style */}
+        {/* Settings Body */}
         <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-4 text-xs md:text-sm">
           {/* ========================================================== */}
           {/* 1. BACKGROUND PHOTO ADJUSTMENT FRAME */}
@@ -274,9 +301,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Interactive Frame Box */}
+            {/* Interactive Frame Box: Clicking the frame opens file selector if no photo */}
             <div
-              className="relative w-full h-52 md:h-60 bg-black rounded-2xl overflow-hidden border border-purple-500/30 flex items-center justify-center select-none touch-none cursor-pointer"
+              className="relative w-full h-48 md:h-56 bg-black rounded-2xl overflow-hidden border border-purple-500/30 flex items-center justify-center select-none touch-none cursor-pointer"
               onClick={() => {
                 if (!sourceImg) {
                   fileInputRef.current?.click();
@@ -335,8 +362,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Photo Action Controls (when photo is set) */}
-            {sourceImg ? (
+            {/* Photo Action Controls: only shown when a photo is selected! ("写真を選択する" button is removed when no photo) */}
+            {sourceImg && (
               <div className="space-y-2">
                 {/* Scale slider */}
                 <div className="p-2 rounded-xl bg-black/40 border border-purple-500/20 space-y-1">
@@ -397,7 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Change photo & Remove photo ("設定なし"とできる画面) */}
+                {/* Change photo & Remove photo ("設定なし"とできるボタン) */}
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => fileInputRef.current?.click()}
@@ -416,19 +443,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </button>
                 </div>
               </div>
-            ) : (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md shadow-purple-900/40 transition cursor-pointer active:scale-98"
-              >
-                <ImagePlus className="w-4 h-4" />
-                <span>写真を選択する</span>
-              </button>
             )}
           </section>
 
           {/* ========================================================== */}
-          {/* 2. CLOCK NUMERAL STYLE */}
+          {/* 2. GOOGLE CALENDAR CONNECTION SECTION */}
+          {/* "「Googleログイン」ボタンは設定画面に移動し、連携前はカレンダー予定表示の欄は非表示とする" */}
+          {/* ========================================================== */}
+          <section className="space-y-2 pt-3 border-t border-purple-500/20">
+            <div className="font-semibold text-purple-200 text-xs">Google カレンダー連携</div>
+            {isCalendarConnected || userEmail ? (
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-purple-500/20 text-xs">
+                <div className="flex flex-col">
+                  <span className="text-purple-300/80 text-[11px]">連携済み</span>
+                  <span className="font-semibold text-white truncate max-w-[200px]">
+                    {userEmail || 'Googleアカウント'}
+                  </span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-200 border border-rose-500/30 text-xs font-medium cursor-pointer active:scale-95"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>連携解除</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <button
+                  onClick={handleGoogleLogin}
+                  disabled={isLoggingIn}
+                  className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-white text-gray-800 text-xs font-semibold hover:bg-gray-100 shadow-md transition cursor-pointer disabled:opacity-50 active:scale-98"
+                >
+                  <svg viewBox="0 0 48 48" className="w-4 h-4">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                  </svg>
+                  <span>{isLoggingIn ? 'Google認証中...' : 'Googleログイン'}</span>
+                </button>
+                {loginError && (
+                  <p className="text-[10px] text-rose-300 text-center leading-tight">
+                    {loginError}
+                  </p>
+                )}
+                <p className="text-[10px] text-purple-300/70 text-center">
+                  連携すると直近の予定が自動で置時計に表示されます
+                </p>
+              </div>
+            )}
+          </section>
+
+          {/* ========================================================== */}
+          {/* 3. CLOCK NUMERAL STYLE */}
           {/* ========================================================== */}
           <section className="space-y-2 pt-3 border-t border-purple-500/20">
             <div className="font-semibold text-purple-200 text-xs">時計文字盤の数字スタイル</div>
@@ -452,23 +520,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ))}
             </div>
           </section>
-
-          {/* ========================================================== */}
-          {/* 3. GOOGLE ACCOUNT STATUS */}
-          {/* ========================================================== */}
-          {userEmail && (
-            <section className="flex items-center justify-between pt-3 border-t border-purple-500/20 text-xs">
-              <span className="text-purple-300/80 truncate max-w-[200px]">
-                Google連携中: <strong className="text-white">{userEmail}</strong>
-              </span>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-200 border border-rose-500/30 cursor-pointer"
-              >
-                <LogOut className="w-3 h-3" /> ログアウト
-              </button>
-            </section>
-          )}
 
           {/* Close button */}
           <div className="pt-2">

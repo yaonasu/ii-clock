@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, RotateCcw, RefreshCw, BellOff, XCircle, X } from 'lucide-react';
+import { Play, Pause, RotateCcw, RefreshCw, BellOff, XCircle } from 'lucide-react';
 import { fetchUpcomingEvent, type CalendarEvent } from '../services/calendar';
-import { googleSignIn, initAuth, getAccessToken, logout, type User } from '../services/firebase';
+import { initAuth, getAccessToken, type User } from '../services/firebase';
 import { sound } from '../services/sound';
 
 export interface SmartphoneNotification {
@@ -15,9 +15,13 @@ export interface SmartphoneNotification {
 
 interface WidgetsPanelProps {
   onAlarmTrigger?: () => void;
+  onCalendarConnectionChange?: (connected: boolean) => void;
 }
 
-export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) => {
+export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({
+  onAlarmTrigger,
+  onCalendarConnectionChange,
+}) => {
   // ===================== 1. COUNTDOWN TIMER STATE =====================
   const [timerDuration, setTimerDuration] = useState<number>(300); // 5 minutes default
   const [timeLeft, setTimeLeft] = useState<number>(300);
@@ -225,30 +229,19 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
   const progressPercent = timerDuration > 0 ? ((timerDuration - timeLeft) / timerDuration) * 100 : 0;
 
   // ===================== 2. GOOGLE CALENDAR STATE =====================
-  // "連携を促すものは 「Googleログイン」のボタン１つとする"
+  // "「Googleログイン」ボタンは設定画面に移動し、連携前はカレンダー予定表示の欄は非表示とする"
   const [user, setUser] = useState<User | null>(null);
   const [calendarEvent, setCalendarEvent] = useState<CalendarEvent | null>(null);
   const [loadingCalendar, setLoadingCalendar] = useState<boolean>(false);
-  const [calendarError, setCalendarError] = useState<string | null>(null);
-  const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
 
   // Load calendar event from OAuth access token
   const loadEvent = useCallback(async (token: string) => {
     setLoadingCalendar(true);
-    setCalendarError(null);
     try {
       const evt = await fetchUpcomingEvent(token);
       setCalendarEvent(evt);
     } catch (err: unknown) {
       console.error('Failed to load calendar event:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg === 'UNAUTHORIZED') {
-        logout();
-        setUser(null);
-        setCalendarError('セッションが切れました。再度ログインしてください。');
-      } else {
-        setCalendarError('カレンダーの最新予定を取得できませんでした');
-      }
     } finally {
       setLoadingCalendar(false);
     }
@@ -260,14 +253,16 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
       (currentUser, token) => {
         setUser(currentUser);
         loadEvent(token);
+        if (onCalendarConnectionChange) onCalendarConnectionChange(true);
       },
       () => {
         setUser(null);
         setCalendarEvent(null);
+        if (onCalendarConnectionChange) onCalendarConnectionChange(false);
       }
     );
     return () => unsubscribe();
-  }, [loadEvent]);
+  }, [loadEvent, onCalendarConnectionChange]);
 
   // Periodic refresh (every 5 minutes)
   useEffect(() => {
@@ -279,32 +274,6 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [loadEvent]);
-
-  // Google OAuth sign-in handler: Single "Googleログイン" action
-  const handleSignIn = async () => {
-    setIsSigningIn(true);
-    setCalendarError(null);
-    try {
-      const res = await googleSignIn();
-      if (res) {
-        setUser(res.user);
-        await loadEvent(res.accessToken);
-      }
-    } catch (err: unknown) {
-      console.error('Sign in error:', err);
-      const errStr = err instanceof Error ? err.message : String(err);
-      setCalendarError(`ログインエラー: ${errStr}`);
-    } finally {
-      setIsSigningIn(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    await logout();
-    setUser(null);
-    setCalendarEvent(null);
-    setCalendarError(null);
-  };
 
   // ===================== 3. SMARTPHONE NOTIFICATIONS =====================
   // "スマホの通知は取れない場合は何も表示しない"
@@ -354,13 +323,20 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
   const isCalendarConnected = !!user || !!calendarEvent;
 
   return (
-    <div className="flex flex-col justify-center w-full h-full max-w-lg mx-auto py-1 px-1 sm:px-2 gap-2 select-none overflow-hidden">
-      {/* 1. COUNTDOWN TIMER */}
+    /* "Google連携できていないときは、カウントダウンタイマー等の領域のコンテンツは上下真ん中に配置し、
+       Google連携できているときは、カウントダウンタイマー等の領域は上下の上側に配置する" */
+    <div
+      className={`flex flex-col w-full h-full max-w-lg mx-auto py-1 px-1 sm:px-2 gap-2 select-none overflow-hidden transition-all duration-500 ${
+        isCalendarConnected ? 'justify-start pt-2' : 'justify-center'
+      }`}
+    >
+      {/* 1. COUNTDOWN TIMER:
+          "カウントダウンタイマー、カレンダー予定、スマホ通知の欄は背景は透過とする" */}
       <div
-        className={`relative rounded-xl p-2 sm:p-2.5 transition-all duration-300 border shrink-0 ${
+        className={`relative rounded-2xl p-2 sm:p-2.5 transition-all duration-300 shrink-0 bg-transparent ${
           timerCompletedFlash
-            ? 'bg-rose-950/85 border-rose-500 shadow-lg shadow-rose-900/60 ring-2 ring-rose-500/50'
-            : 'bg-black/45 backdrop-blur-md border-purple-500/20 shadow-md'
+            ? 'ring-2 ring-rose-500/80 shadow-lg shadow-rose-900/60 bg-rose-950/70'
+            : 'border border-purple-500/20'
         }`}
       >
         {/* Digits & Progress */}
@@ -471,105 +447,83 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
         </div>
       </div>
 
-      {/* 2. GOOGLE CALENDAR NEXT EVENT (1 item) */}
-      {/* "連携を促すものは 「Googleログイン」のボタン１つとする" */}
-      <div className="relative rounded-xl p-2 sm:p-2.5 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[50px]">
-        {isCalendarConnected && (
-          <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+      {/* 2. GOOGLE CALENDAR NEXT EVENT (Only shown when connected!)
+          "連携前はカレンダー予定表示の欄は非表示とする"
+          "カウントダウンタイマー、カレンダー予定、スマホ通知の欄は背景は透過とする"
+          "カレンダー予定、スマホ通知の文章が入る欄は背景を透過としない" */}
+      {isCalendarConnected && (
+        <div className="relative rounded-2xl bg-transparent shrink-0">
+          {/* Inner card with opaque background so text is perfectly readable! */}
+          <div className="relative rounded-xl p-2.5 bg-slate-900/90 backdrop-blur-md border border-purple-500/30 shadow-lg min-h-[48px] flex flex-col justify-center">
+            {/* Refresh button */}
             <button
               onClick={async () => {
                 const token = await getAccessToken();
                 if (token) loadEvent(token);
               }}
               disabled={loadingCalendar}
-              className="text-purple-300/70 hover:text-white p-0.5 rounded transition cursor-pointer"
+              className="absolute top-2 right-2 text-purple-300/70 hover:text-white p-0.5 rounded transition cursor-pointer"
               title="予定を更新"
             >
               <RefreshCw className={`w-3 h-3 ${loadingCalendar ? 'animate-spin' : ''}`} />
             </button>
-            <button
-              onClick={handleDisconnect}
-              className="text-rose-400/60 hover:text-rose-300 p-0.5 rounded transition cursor-pointer"
-              title="連携を解除"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
 
-        {!isCalendarConnected ? (
-          <div className="flex flex-col items-center justify-center gap-1 py-0.5">
-            {/* The single, official "Googleログイン" button */}
-            <button
-              onClick={handleSignIn}
-              disabled={isSigningIn}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-gray-800 text-xs font-semibold hover:bg-gray-100 shadow-md transition cursor-pointer disabled:opacity-50 active:scale-95"
-            >
-              <svg viewBox="0 0 48 48" className="w-4 h-4">
-                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-              </svg>
-              <span>{isSigningIn ? 'ログイン中...' : 'Googleログイン'}</span>
-            </button>
-
-            {calendarError && (
-              <span className="text-[10px] text-rose-300 text-center leading-tight mt-0.5">
-                {calendarError}
-              </span>
+            {loadingCalendar ? (
+              <div className="py-1 text-center text-xs text-purple-300/70">
+                予定を読み込み中...
+              </div>
+            ) : calendarEvent ? (
+              <div className="flex flex-col gap-0.5 pr-6">
+                <div className="flex items-start justify-between gap-1">
+                  <span className="font-semibold text-xs sm:text-sm text-white line-clamp-1">
+                    {calendarEvent.summary}
+                  </span>
+                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-medium">
+                    {calendarEvent.relativeTime}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-purple-200/80">
+                  <span className="truncate">{calendarEvent.timeFormatted}</span>
+                  {calendarEvent.location && (
+                    <span className="text-purple-300/70 truncate max-w-[120px] ml-1">
+                      📍 {calendarEvent.location}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="py-1 text-center text-[11px] text-purple-300/60">
+                直近の予定はありません
+              </div>
             )}
           </div>
-        ) : loadingCalendar ? (
-          <div className="py-1 text-center text-xs text-purple-300/70">
-            予定を読み込み中...
-          </div>
-        ) : calendarEvent ? (
-          <div className="flex flex-col gap-0.5 pr-8">
-            <div className="flex items-start justify-between gap-1">
-              <span className="font-semibold text-xs sm:text-sm text-white line-clamp-1">
-                {calendarEvent.summary}
-              </span>
-              <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-medium">
-                {calendarEvent.relativeTime}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-purple-200/80">
-              <span className="truncate">{calendarEvent.timeFormatted}</span>
-              {calendarEvent.location && (
-                <span className="text-purple-300/70 truncate max-w-[120px] ml-1">
-                  📍 {calendarEvent.location}
-                </span>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="py-1 text-center text-[11px] text-purple-300/60">
-            直近の予定はありません
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* 3. SMARTPHONE NOTIFICATION (Only displayed when phone notifications are available) */}
-      {/* "スマホの通知は取れない場合は何も表示しない" */}
+      {/* 3. SMARTPHONE NOTIFICATION (Only displayed when phone notifications are available)
+          "カウントダウンタイマー、カレンダー予定、スマホ通知の欄は背景は透過とする"
+          "カレンダー予定、スマホ通知の文章が入る欄は背景を透過としない" */}
       {notifications.length > 0 && activeNotif && (
-        <div className="relative rounded-xl p-1.5 sm:p-2 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[46px] overflow-hidden">
-          <div className="flex items-start gap-2 transition-opacity duration-300">
-            <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold ${activeNotif.appColor}`}>
-              {activeNotif.appName}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-1">
-                <span className="font-semibold text-xs text-amber-200 truncate">
-                  {activeNotif.title}
-                </span>
-                <span className="text-[9px] text-purple-300/60 shrink-0">
-                  {activeNotif.time}
-                </span>
+        <div className="relative rounded-2xl bg-transparent shrink-0">
+          {/* Inner card with opaque background */}
+          <div className="relative rounded-xl p-2.5 bg-slate-900/90 backdrop-blur-md border border-purple-500/30 shadow-lg min-h-[46px] flex flex-col justify-center overflow-hidden">
+            <div className="flex items-start gap-2 transition-opacity duration-300">
+              <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold ${activeNotif.appColor}`}>
+                {activeNotif.appName}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-semibold text-xs text-amber-200 truncate">
+                    {activeNotif.title}
+                  </span>
+                  <span className="text-[9px] text-purple-300/60 shrink-0">
+                    {activeNotif.time}
+                  </span>
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-white/90 truncate leading-tight">
+                  {activeNotif.text}
+                </p>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-white/90 truncate leading-tight">
-                {activeNotif.text}
-              </p>
             </div>
           </div>
         </div>

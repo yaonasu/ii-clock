@@ -89,8 +89,9 @@ export default function App() {
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
-  // User auth email
+  // User auth email & calendar connection
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isCalendarConnected, setIsCalendarConnected] = useState<boolean>(false);
 
   // Save settings helper
   const handleUpdateSettings = (newPartial: Partial<AppSettings>) => {
@@ -291,7 +292,10 @@ export default function App() {
 
             {/* Bottom Half (50% height): 3 Widgets */}
             <div className="w-full h-1/2 min-h-0 flex items-center justify-center overflow-hidden">
-              <WidgetsPanel onAlarmTrigger={handleScreenTap} />
+              <WidgetsPanel
+                onAlarmTrigger={handleScreenTap}
+                onCalendarConnectionChange={setIsCalendarConnected}
+              />
             </div>
           </div>
         ) : (
@@ -304,7 +308,10 @@ export default function App() {
           >
             {/* Left Half (50% width, 100% height): 3 Widgets (Timer, Calendar, Notification) */}
             <div className="w-1/2 h-full min-h-0 flex items-center justify-center overflow-hidden">
-              <WidgetsPanel onAlarmTrigger={handleScreenTap} />
+              <WidgetsPanel
+                onAlarmTrigger={handleScreenTap}
+                onCalendarConnectionChange={setIsCalendarConnected}
+              />
             </div>
 
             {/* Right Half (50% width, 100% height): Clock (Large scale up to 82vh) */}
@@ -328,7 +335,15 @@ export default function App() {
         currentBg={bgConfig}
         onSaveBackground={handleSaveBackground}
         userEmail={userEmail}
-        onLogoutSuccess={() => setUserEmail(null)}
+        isCalendarConnected={isCalendarConnected || !!userEmail}
+        onGoogleLoginSuccess={() => {
+          setIsCalendarConnected(true);
+          setUserEmail(auth.currentUser?.email || '連携済み');
+        }}
+        onLogoutSuccess={() => {
+          setIsCalendarConnected(false);
+          setUserEmail(null);
+        }}
       />
     </div>
   );

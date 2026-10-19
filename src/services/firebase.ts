@@ -10,30 +10,80 @@ export const SCOPES = ['https://www.googleapis.com/auth/calendar.events.readonly
 
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
+provider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+const TOKEN_KEY = 'ii_clock_google_access_token';
+
+export const getStoredAccessToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return cachedAccessToken || localStorage.getItem(TOKEN_KEY);
+};
+
+export const setStoredAccessToken = (token: string | null): void => {
+  cachedAccessToken = token;
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+};
 
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User | null, token: string) => void,
   onAuthFailure?: () => void
 ) => {
+  const token = getStoredAccessToken();
+  if (token && onAuthSuccess) {
+    onAuthSuccess(auth.currentUser, token);
+  }
+
   return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
-      }
+    const currentToken = getStoredAccessToken();
+    if (currentToken) {
+      if (onAuthSuccess) onAuthSuccess(user, currentToken);
+    } else if (user) {
+      if (onAuthFailure) onAuthFailure();
     } else {
-      cachedAccessToken = null;
+      setStoredAccessToken(null);
       if (onAuthFailure) onAuthFailure();
     }
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (): Promise<{ user: User | null; accessToken: string }> => {
+  // Method 1: Google Identity Services (GIS) TokenClient
+  // Direct client-side authorization that avoids Firebase /__/auth/handler "The requested action is invalid"
+  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2 && firebaseConfig.oAuthClientId) {
+    try {
+      const token = await new Promise<string>((resolve, reject) => {
+        const client = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: firebaseConfig.oAuthClientId,
+          scope: SCOPES.join(' '),
+          callback: (response: any) => {
+            if (response.error) {
+              reject(new Error(response.error_description || response.error));
+            } else if (response.access_token) {
+              resolve(response.access_token);
+            } else {
+              reject(new Error('アクセストークンを取得できませんでした'));
+            }
+          },
+        });
+        client.requestAccessToken({ prompt: 'select_account' });
+      });
+      setStoredAccessToken(token);
+      return { user: auth.currentUser, accessToken: token };
+    } catch (gisError) {
+      console.warn('GIS TokenClient attempt failed, trying Firebase popup fallback:', gisError);
+    }
+  }
+
+  // Method 2: Firebase Auth signInWithPopup
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -42,8 +92,8 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       throw new Error('Googleアカウントからアクセストークンを取得できませんでした');
     }
 
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    setStoredAccessToken(credential.accessToken);
+    return { user: result.user, accessToken: credential.accessToken };
   } catch (error: unknown) {
     console.error('Sign in error:', error);
     throw error;
@@ -53,10 +103,12 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
+  return getStoredAccessToken();
 };
 
 export const logout = async () => {
-  await auth.signOut();
-  cachedAccessToken = null;
+  try {
+    await auth.signOut();
+  } catch {}
+  setStoredAccessToken(null);
 };
