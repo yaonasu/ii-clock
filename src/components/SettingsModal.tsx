@@ -118,7 +118,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const frameRatio = frameOrientation === 'landscape'
     ? Math.max(viewportSize.width, viewportSize.height) / Math.min(viewportSize.width, viewportSize.height)
     : Math.min(viewportSize.width, viewportSize.height) / Math.max(viewportSize.width, viewportSize.height);
-  const frameWidth = Math.min(previewArea.width * 0.92, previewArea.height * 0.92 * frameRatio);
+  const frameWidth = Math.min(previewArea.width * 0.92, previewArea.height * 0.92 * frameRatio) * (frameOrientation === 'landscape' ? 0.8 : 1);
   const frameHeight = frameRatio ? frameWidth / frameRatio : 0;
   const previewScaleX = frameWidth / (frameOrientation === 'landscape' ? Math.max(viewportSize.width, viewportSize.height) : Math.min(viewportSize.width, viewportSize.height));
   const previewScaleY = frameHeight / (frameOrientation === 'landscape' ? Math.min(viewportSize.width, viewportSize.height) : Math.max(viewportSize.width, viewportSize.height));
@@ -345,7 +345,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <img
                   src={sourceImg}
                   alt="カスタム背景"
-                  className="absolute object-contain pointer-events-none"
+                  className="absolute object-cover pointer-events-none"
                   style={{
                     width: frameWidth,
                     height: frameHeight,
