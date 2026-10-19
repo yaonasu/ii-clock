@@ -36,17 +36,21 @@ export const setStoredAccessToken = (token: string | null): void => {
 
 // Initialize auth state listener
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User | null, token: string) => void,
   onAuthFailure?: () => void
 ) => {
+  const storedToken = getStoredAccessToken();
+  if (storedToken && onAuthSuccess) {
+    onAuthSuccess(auth.currentUser, storedToken);
+  }
+
   return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      const storedToken = getStoredAccessToken();
-      if (storedToken) {
-        if (onAuthSuccess) onAuthSuccess(user, storedToken);
-      } else if (!isSigningIn) {
-        if (onAuthFailure) onAuthFailure();
-      }
+    const token = getStoredAccessToken();
+    if (token) {
+      if (onAuthSuccess) onAuthSuccess(user, token);
+    } else if (user) {
+      // User logged in but no token stored
+      if (onAuthFailure) onAuthFailure();
     } else {
       setStoredAccessToken(null);
       if (onAuthFailure) onAuthFailure();
@@ -54,7 +58,35 @@ export const initAuth = (
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (): Promise<{ user: User | null; accessToken: string } | null> => {
+  // 1. First attempt: Direct Google Identity Services (GIS) TokenClient
+  // This bypasses Firebase Auth handler and eliminates "The requested action is invalid"
+  if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2 && firebaseConfig.oAuthClientId) {
+    try {
+      const token = await new Promise<string>((resolve, reject) => {
+        const client = (window as any).google.accounts.oauth2.initTokenClient({
+          client_id: firebaseConfig.oAuthClientId,
+          scope: CALENDAR_SCOPE,
+          callback: (response: any) => {
+            if (response.error) {
+              reject(new Error(response.error_description || response.error));
+            } else if (response.access_token) {
+              resolve(response.access_token);
+            } else {
+              reject(new Error('アクセストークンを取得できませんでした'));
+            }
+          },
+        });
+        client.requestAccessToken({ prompt: 'select_account' });
+      });
+      setStoredAccessToken(token);
+      return { user: auth.currentUser, accessToken: token };
+    } catch (gisErr) {
+      console.warn('GIS TokenClient error, trying Firebase popup fallback:', gisErr);
+    }
+  }
+
+  // 2. Fallback attempt: Firebase Auth signInWithPopup
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -74,6 +106,8 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const logout = async () => {
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch {}
   setStoredAccessToken(null);
 };

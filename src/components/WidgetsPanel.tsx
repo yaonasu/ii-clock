@@ -366,8 +366,8 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
 
   // ===================== 3. SMARTPHONE NOTIFICATIONS =====================
   // "通知は本アプリの通知ではなくて、インストールされたスマホの通知を表示する"
-  // "通知の最新から順番に１５秒づつ表示する"
-  const [notifications, setNotifications] = useState<SmartphoneNotification[]>(DEFAULT_PHONE_NOTIFICATIONS);
+  // Only show smartphone notifications if actual notifications are received
+  const [notifications, setNotifications] = useState<SmartphoneNotification[]>([]);
   const [currentNotifIndex, setCurrentNotifIndex] = useState<number>(0);
   const [notifProgress, setNotifProgress] = useState<number>(0);
 
@@ -617,9 +617,9 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
         )}
       </div>
 
-      {/* 3. SMARTPHONE NOTIFICATION (1 item, cycles every 15s) */}
-      <div className="relative rounded-xl p-1.5 sm:p-2 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[46px] overflow-hidden">
-        {activeNotif ? (
+      {/* 3. SMARTPHONE NOTIFICATION (Only displayed when phone notifications are available) */}
+      {notifications.length > 0 && activeNotif && (
+        <div className="relative rounded-xl p-1.5 sm:p-2 bg-black/45 backdrop-blur-md border border-purple-500/20 shadow-md flex flex-col justify-center shrink-0 min-h-[46px] overflow-hidden">
           <div className="flex items-start gap-2 transition-opacity duration-300">
             <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold ${activeNotif.appColor}`}>
               {activeNotif.appName}
@@ -638,12 +638,8 @@ export const WidgetsPanel: React.FC<WidgetsPanelProps> = ({ onAlarmTrigger }) =>
               </p>
             </div>
           </div>
-        ) : (
-          <div className="py-0.5 text-center text-[10px] text-purple-300/60">
-            通知はありません
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

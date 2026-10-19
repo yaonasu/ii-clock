@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Settings } from 'lucide-react';
 import { NasubiClock } from './components/NasubiClock';
 import { WidgetsPanel } from './components/WidgetsPanel';
-import { BackgroundCropperModal, type BackgroundConfig } from './components/BackgroundCropperModal';
-import { SettingsModal, type AppSettings } from './components/SettingsModal';
+import { SettingsModal, type AppSettings, type BackgroundConfig } from './components/SettingsModal';
 import { auth } from './services/firebase';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -63,15 +62,18 @@ export default function App() {
   });
 
   // 50:50 Area Position State: swaps every 3 minutes!
-  // In Landscape: isPanelAFirst === true -> Clock on Left, Widgets on Right
-  // In Portrait: isPanelAFirst === true -> Clock on Top, Widgets on Bottom
-  // Swapped every 3 minutes!
-  const [isPanelAFirst, setIsPanelAFirst] = useState<boolean>(true);
+  // In Landscape:
+  // Expected initial: Left half = 3 widgets, Right half = Clock
+  // Swapped: Left half = Clock, Right half = 3 widgets
+  // In Portrait:
+  // Initial: Top half = Clock, Bottom half = 3 widgets
+  // Swapped: Top half = 3 widgets, Bottom half = Clock
+  const [isSwapped, setIsSwapped] = useState<boolean>(false);
 
   // Screen Brightness:
-  // "・アプリ起動中は輝度を現在の設定の半分にする (50%)"
-  // "・アプリが裏にいったり終了したら輝度を元に戻す"
-  // "・アプリ起動中にタップした場合は３０秒間輝度を元に戻す"
+  // - Active app: 50% brightness
+  // - Tap screen: restore 100% brightness for 30s
+  // - Background/blur: restore 100% brightness
   const [isFullBrightness, setIsFullBrightness] = useState<boolean>(false);
   const brightTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -80,7 +82,6 @@ export default function App() {
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isBgModalOpen, setIsBgModalOpen] = useState<boolean>(false);
 
   // User auth email
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -94,7 +95,7 @@ export default function App() {
     });
   };
 
-  // Save background helper
+  // Save background helper with safe localStorage
   const handleSaveBackground = (newBg: BackgroundConfig) => {
     setBgConfig(newBg);
     try {
@@ -133,9 +134,6 @@ export default function App() {
 
   // ==========================================================
   // 2. BRIGHTNESS / DIMMING:
-  // - Active app: 50% brightness (overlay opacity 0.5)
-  // - Tap screen: restore full brightness (overlay opacity 0) for 30 seconds
-  // - Background/blur: restore full brightness (overlay opacity 0)
   // ==========================================================
   const handleScreenTap = useCallback(() => {
     setIsFullBrightness(true);
@@ -148,11 +146,9 @@ export default function App() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        // App in background -> Restore brightness to 100%
         setIsFullBrightness(true);
         if (brightTimerRef.current) clearTimeout(brightTimerRef.current);
       } else {
-        // App returns to foreground -> Request wake lock and start at 50% dimming after 30s
         requestWakeLock();
         handleScreenTap();
       }
@@ -181,32 +177,16 @@ export default function App() {
   }, []);
 
   // ==========================================================
-  // 3. 3-MINUTE 50:50 POSITION SWAP (Portrait: Top/Bottom, Landscape: Left/Right)
-  // "分割表示した領域は３分に１回場所を入れ替える"
+  // 3. 3-MINUTE 50:50 POSITION SWAP
   // ==========================================================
   useEffect(() => {
     const swapInterval = setInterval(() => {
-      setIsPanelAFirst((prev) => !prev);
+      setIsSwapped((prev) => !prev);
     }, 3 * 60 * 1000); // 3 minutes!
 
     return () => clearInterval(swapInterval);
   }, []);
 
-  // Background style
-  const backgroundStyle: React.CSSProperties = React.useMemo(() => {
-    if (bgConfig.type === 'custom' && bgConfig.dataUrl) {
-      return {
-        backgroundImage: `url(${bgConfig.dataUrl})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      };
-    }
-    return {
-      background: bgConfig.dataUrl || DEFAULT_BG_CONFIG.dataUrl,
-    };
-  }, [bgConfig]);
-
-  // Brightness overlay: 50% dim when active, 0% when full brightness (tap or background)
   const overlayOpacity = isFullBrightness ? 0 : 0.5;
 
   return (
@@ -258,79 +238,65 @@ export default function App() {
 
       {/* ========================================================== */}
       {/* MAIN CONTAINER: EXACT 50:50 EQUAL SPLIT */}
-      {/* ・縦の場合: 上下 50:50 分割 */}
-      {/* ・横の場合: 左右 50:50 分割 */}
-      {/* ・3分に1回、位置を自動入れ替え */}
-      {/* ・1画面にすべて収める (overflow-hidden, zero scrolling) */}
+      {/* ・横向き期待値: 右半分に時計、左半分に３種の表示 (上下に寄せない) */}
+      {/* ・縦向き: 上下に時計と３種の表示を50:50で配置 */}
+      {/* ・3分に1回場所を入れ替える */}
       {/* ========================================================== */}
       <div className="relative z-20 w-full h-full overflow-hidden">
         {isPortrait ? (
-          /* PORTRAIT: Top / Bottom 50:50 Split (grid-rows-2) */
-          <div className="grid grid-rows-2 w-full h-full p-1.5 gap-2 overflow-hidden transition-all duration-700">
-            {/* Panel 1: Clock */}
-            <div
-              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
-                isPanelAFirst ? 'row-start-1' : 'row-start-2'
-              }`}
-            >
+          /* PORTRAIT: Top / Bottom 50:50 Split */
+          <div
+            className={`flex flex-col w-full h-full p-1.5 gap-2 overflow-hidden items-center justify-center transition-all duration-700 ${
+              isSwapped ? 'flex-col-reverse' : 'flex-col'
+            }`}
+          >
+            {/* Top Half (50% height): Clock */}
+            <div className="w-full h-1/2 min-h-0 flex items-center justify-center overflow-hidden">
               <NasubiClock
                 numeralStyle={settings.numeralStyle}
-                showDigital={settings.showDigital}
+                showDigital={true}
               />
             </div>
 
-            {/* Panel 2: Widgets (Timer, Google Calendar, Smartphone Notification) */}
-            <div
-              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
-                isPanelAFirst ? 'row-start-2' : 'row-start-1'
-              }`}
-            >
+            {/* Bottom Half (50% height): 3 Widgets */}
+            <div className="w-full h-1/2 min-h-0 flex items-center justify-center overflow-hidden">
               <WidgetsPanel onAlarmTrigger={handleScreenTap} />
             </div>
           </div>
         ) : (
-          /* LANDSCAPE: Left / Right 50:50 Split (grid-cols-2) */
-          <div className="grid grid-cols-2 w-full h-full p-2 md:p-3 gap-3 overflow-hidden transition-all duration-700">
-            {/* Panel 1: Clock */}
-            <div
-              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
-                isPanelAFirst ? 'col-start-1' : 'col-start-2'
-              }`}
-            >
-              <NasubiClock
-                numeralStyle={settings.numeralStyle}
-                showDigital={settings.showDigital}
-              />
+          /* LANDSCAPE: Exactly Left Half = 3 Widgets, Right Half = Clock */
+          /* Perfectly centered vertically, no diagonal offset */
+          <div
+            className={`flex w-full h-full p-2 md:p-4 gap-4 overflow-hidden items-center justify-center transition-all duration-700 ${
+              isSwapped ? 'flex-row-reverse' : 'flex-row'
+            }`}
+          >
+            {/* Left Half (50% width, 100% height): 3 Widgets (Timer, Calendar, Notification) */}
+            <div className="w-1/2 h-full min-h-0 flex items-center justify-center overflow-hidden">
+              <WidgetsPanel onAlarmTrigger={handleScreenTap} />
             </div>
 
-            {/* Panel 2: Widgets (Timer, Google Calendar, Smartphone Notification) */}
-            <div
-              className={`w-full h-full min-h-0 flex items-center justify-center overflow-hidden transition-all duration-700 ${
-                isPanelAFirst ? 'col-start-2' : 'col-start-1'
-              }`}
-            >
-              <WidgetsPanel onAlarmTrigger={handleScreenTap} />
+            {/* Right Half (50% width, 100% height): Clock */}
+            <div className="w-1/2 h-full min-h-0 flex items-center justify-center overflow-hidden">
+              <NasubiClock
+                numeralStyle={settings.numeralStyle}
+                showDigital={true}
+              />
             </div>
           </div>
         )}
       </div>
 
-      {/* MODALS */}
+      {/* UNIFIED 1-SCREEN SETTINGS MODAL */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
-        onOpenBackgroundModal={() => setIsBgModalOpen(true)}
+        currentBg={bgConfig}
+        onSaveBackground={handleSaveBackground}
         userEmail={userEmail}
         onLogoutSuccess={() => setUserEmail(null)}
-      />
-
-      <BackgroundCropperModal
-        isOpen={isBgModalOpen}
-        onClose={() => setIsBgModalOpen(false)}
-        currentConfig={bgConfig}
-        onSaveBackground={handleSaveBackground}
       />
     </div>
   );
