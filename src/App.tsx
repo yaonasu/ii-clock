@@ -231,9 +231,10 @@ export default function App() {
           <img
             src={bgConfig.dataUrl}
             alt="カスタム背景"
-            className="w-full h-full object-cover pointer-events-none transition-transform duration-150"
+            className={isPortrait ? "w-full h-full object-cover pointer-events-none transition-transform duration-150" : "absolute w-full h-full object-cover pointer-events-none transition-transform duration-150"}
             style={{
-              transform: `translate(${activeTransform.offsetX}px, ${activeTransform.offsetY}px) scale(${activeTransform.scale})`,
+              ...(isPortrait ? {} : { left: '50%', top: '50%' }),
+              transform: `${isPortrait ? '' : 'translate(-50%, -50%) '}translate(${activeTransform.offsetX}px, ${activeTransform.offsetY}px) scale(${activeTransform.scale})`,
               transformOrigin: 'center center',
             }}
           />

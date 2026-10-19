@@ -352,7 +352,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     width: frameOrientation === 'portrait' ? previewArea.width : frameWidth,
                     height: frameOrientation === 'portrait' ? previewArea.height : frameHeight,
                     objectFit: frameOrientation === 'portrait' ? 'contain' : 'cover',
-                    transform: `translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
+                    // Anchor the landscape image to the exact center of the selection frame.
+                    // An absolutely positioned image without an explicit anchor can be
+                    // laid out from its static position rather than the frame center.
+                    ...(frameOrientation === 'landscape' ? { left: '50%', top: '50%' } : {}),
+                    transform: `${frameOrientation === 'landscape' ? 'translate(-50%, -50%) ' : ''}translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
                     transformOrigin: 'center center',
                   }}
                   draggable={false}
