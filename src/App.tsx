@@ -231,8 +231,15 @@ export default function App() {
           <img
             src={bgConfig.dataUrl}
             alt="カスタム背景"
-            className="absolute w-full h-full object-cover pointer-events-none transition-transform duration-150"
+            className={isPortrait
+              ? "absolute object-cover pointer-events-none transition-transform duration-150"
+              : "absolute w-full h-full object-cover pointer-events-none transition-transform duration-150"}
             style={{
+              // In portrait, the image element itself must extend beyond the viewport
+              // when the source is wider than the screen. Otherwise object-cover clips
+              // its content to a viewport-wide element BEFORE translation, creating
+              // a black strip when the image is moved horizontally.
+              ...(isPortrait ? { width: 'auto', height: '100%', minWidth: '100%', maxWidth: 'none' } : {}),
               left: '50%', top: '50%',
               transform: `translate(-50%, -50%) translate(${activeTransform.offsetX}px, ${activeTransform.offsetY}px) scale(${activeTransform.scale})`,
               transformOrigin: 'center center',
