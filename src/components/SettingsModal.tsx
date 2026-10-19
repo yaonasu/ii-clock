@@ -55,6 +55,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   // Photo source: if custom, it holds dataUrl; otherwise null
   const [sourceImg, setSourceImg] = useState<string | null>(null);
+  // Keep the source image's full dimensions so the portrait selection frame
+  // can move over any part of the image without clipping it to the frame.
+  const [sourceDimensions, setSourceDimensions] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    if (!sourceImg) {
+      setSourceDimensions({ width: 0, height: 0 });
+      return;
+    }
+    const image = new Image();
+    image.onload = () => setSourceDimensions({ width: image.naturalWidth, height: image.naturalHeight });
+    image.src = sourceImg;
+    return () => { image.onload = null; };
+  }, [sourceImg]);
 
   // Separate transforms for Portrait and Landscape
   const [landscapeTransform, setLandscapeTransform] = useState<ImageTransform>({
@@ -122,6 +135,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const frameHeight = frameRatio ? frameWidth / frameRatio : 0;
   const previewScaleX = frameWidth / (frameOrientation === 'landscape' ? Math.max(viewportSize.width, viewportSize.height) : Math.min(viewportSize.width, viewportSize.height));
   const previewScaleY = frameHeight / (frameOrientation === 'landscape' ? Math.min(viewportSize.width, viewportSize.height) : Math.max(viewportSize.width, viewportSize.height));
+  // Match the clock screen's object-cover base scale, but draw the ENTIRE
+  // image element outside the dotted frame rather than cropping it inside.
+  const portraitImageScale = sourceDimensions.width && sourceDimensions.height
+    ? Math.max(frameWidth / sourceDimensions.width, frameHeight / sourceDimensions.height)
+    : 0;
 
   const updateCurrentTransform = (updater: (prev: ImageTransform) => ImageTransform) => {
     if (frameOrientation === 'landscape') {
@@ -347,16 +365,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   alt="カスタム背景"
                   className="absolute object-cover pointer-events-none"
                   style={{
-                    // Portrait editing shows the entire source image in the preview area,
-                    // including portions outside the dashed selection frame.
-                    width: frameOrientation === 'portrait' ? previewArea.width : frameWidth,
-                    height: frameOrientation === 'portrait' ? previewArea.height : frameHeight,
-                    objectFit: frameOrientation === 'portrait' ? 'contain' : 'cover',
-                    // Anchor the landscape image to the exact center of the selection frame.
-                    // An absolutely positioned image without an explicit anchor can be
-                    // laid out from its static position rather than the frame center.
-                    ...(frameOrientation === 'landscape' ? { left: '50%', top: '50%' } : {}),
-                    transform: `${frameOrientation === 'landscape' ? 'translate(-50%, -50%) ' : ''}translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
+                    width: frameOrientation === 'portrait' ? sourceDimensions.width * portraitImageScale : frameWidth,
+                    height: frameOrientation === 'portrait' ? sourceDimensions.height * portraitImageScale : frameHeight,
+                    objectFit: 'fill',
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) translate(${currentTransform.offsetX * previewScaleX}px, ${currentTransform.offsetY * previewScaleY}px) scale(${currentTransform.scale})`,
                     transformOrigin: 'center center',
                   }}
                   draggable={false}
